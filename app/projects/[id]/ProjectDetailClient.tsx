@@ -2,247 +2,165 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, Terminal, FolderOpen, GitBranch, ArrowUp, ArrowDown, RefreshCw, Clock, Plus, ChevronDown, ChevronUp, Trash2, Edit2, X, Check } from 'lucide-react';
+import { ChevronLeft, Terminal, FolderOpen, GitBranch, ArrowUp, ArrowDown, RefreshCw, Clock, ChevronDown, ChevronUp, Link2, Link2Off } from 'lucide-react';
 import { HealthRing, Badge, Chip, AheadBehind, Markdown, Bi, useToast, ToastStack, Spinner } from '@/components/ui';
 import ConstitutionEditor from '@/components/ConstitutionEditor';
 
-/* ─── Postmortem Types ─── */
-interface Incident {
+/* ─── Pitfall type (from session-log.md) ─── */
+interface Pitfall {
   id: string;
-  entityId: string;
-  entityType: 'skill' | 'project';
-  date: string;
-  severity: 'critical' | 'major' | 'minor';
-  title: string;
   problem: string;
-  rootCause: string;
   solution: string;
   lessons: string;
-  tags: string[];
-  createdAt: number;
-  updatedAt: number;
+  linkedProjects: string[];
 }
 
-const SEVERITY_COLORS: Record<string, string> = {
-  critical: 'var(--bad)',
-  major: 'var(--warn)',
-  minor: 'var(--ok)',
-};
-const SEVERITY_ICONS: Record<string, string> = { critical: '🔴', major: '🟡', minor: '🟢' };
-const EMPTY_INCIDENT = (entityId: string): Omit<Incident, 'id' | 'createdAt' | 'updatedAt'> => ({
-  entityId, entityType: 'project',
-  date: new Date().toISOString().slice(0, 10),
-  severity: 'major', title: '', problem: '', rootCause: '', solution: '', lessons: '', tags: [],
-});
-
-/* ─── PostmortemTab Component ─── */
+/* ─── PostmortemTab — session-log sourced pitfalls ─── */
 function PostmortemTab({ projectId }: { projectId: string }) {
-  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [linked, setLinked] = useState<Pitfall[]>([]);
+  const [all, setAll] = useState<Pitfall[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null); // 'new' or incident id
-  const [draft, setDraft] = useState<Omit<Incident, 'id' | 'createdAt' | 'updatedAt'>>(EMPTY_INCIDENT(projectId));
-  const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showLinkMenu, setShowLinkMenu] = useState(false);
+  const [linkingId, setLinkingId] = useState<string | null>(null);
 
-  const load = () => {
+  const load = async () => {
     setLoading(true);
-    fetch(`/api/postmortems?entityId=${projectId}`)
-      .then(r => r.json()).then(setIncidents).catch(() => {}).finally(() => setLoading(false));
+    const [linkedRes, allRes] = await Promise.all([
+      fetch(`/api/pitfalls?projectId=${projectId}`).then(r => r.json()).catch(() => []),
+      fetch('/api/pitfalls').then(r => r.json()).catch(() => []),
+    ]);
+    setLinked(linkedRes);
+    setAll(allRes);
+    setLoading(false);
   };
 
   useEffect(() => { load(); }, [projectId]);
 
-  const startNew = () => {
-    setDraft(EMPTY_INCIDENT(projectId));
-    setEditingId('new');
-    setExpandedId(null);
-  };
+  const unlinked = all.filter(p => !linked.some(l => l.id === p.id));
 
-  const startEdit = (inc: Incident) => {
-    setDraft({ entityId: inc.entityId, entityType: inc.entityType, date: inc.date, severity: inc.severity, title: inc.title, problem: inc.problem, rootCause: inc.rootCause, solution: inc.solution, lessons: inc.lessons, tags: inc.tags });
-    setEditingId(inc.id);
-    setExpandedId(null);
-  };
-
-  const cancelEdit = () => { setEditingId(null); };
-
-  const save = async () => {
-    if (!draft.title.trim()) return;
-    setSaving(true);
+  const handleLink = async (pitfallId: string) => {
+    setLinkingId(pitfallId);
     try {
-      if (editingId === 'new') {
-        const res = await fetch('/api/postmortems', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft) });
-        const created = await res.json();
-        setIncidents(prev => [created, ...prev]);
-      } else {
-        const res = await fetch('/api/postmortems', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...draft, id: editingId }) });
-        const updated = await res.json();
-        setIncidents(prev => prev.map(i => i.id === editingId ? updated : i));
-      }
-      setEditingId(null);
-    } finally { setSaving(false); }
+      await fetch('/api/pitfalls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pitfallId, projectId }),
+      });
+      const found = all.find(p => p.id === pitfallId);
+      if (found) setLinked(prev => [...prev, found]);
+    } finally {
+      setLinkingId(null);
+      setShowLinkMenu(false);
+    }
   };
 
-  const del = async (id: string) => {
-    setDeletingId(id);
-    try {
-      await fetch(`/api/postmortems?id=${id}&entityId=${projectId}`, { method: 'DELETE' });
-      setIncidents(prev => prev.filter(i => i.id !== id));
-      if (expandedId === id) setExpandedId(null);
-    } finally { setDeletingId(null); }
+  const handleUnlink = async (pitfallId: string) => {
+    await fetch(`/api/pitfalls?pitfallId=${pitfallId}&projectId=${projectId}`, { method: 'DELETE' });
+    setLinked(prev => prev.filter(p => p.id !== pitfallId));
+    if (expandedId === pitfallId) setExpandedId(null);
   };
-
-  const Field = ({ label, field, multiline = false }: { label: string; field: keyof typeof draft; multiline?: boolean }) => (
-    <div>
-      <label style={{ fontSize: 11, color: 'var(--tx-3)', display: 'block', marginBottom: 4 }}>{label}</label>
-      {multiline ? (
-        <textarea value={String(draft[field])} onChange={e => setDraft(p => ({ ...p, [field]: e.target.value }))}
-          rows={3} style={{ width: '100%', background: 'var(--bg-1)', border: '1px solid var(--hl-2)', borderRadius: 6, padding: '7px 10px', fontSize: 12.5, fontFamily: 'inherit', color: 'var(--tx-1)', outline: 'none', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box' }} />
-      ) : (
-        <input value={String(draft[field])} onChange={e => setDraft(p => ({ ...p, [field]: e.target.value }))}
-          style={{ width: '100%', background: 'var(--bg-1)', border: '1px solid var(--hl-2)', borderRadius: 6, padding: '7px 10px', fontSize: 12.5, fontFamily: 'inherit', color: 'var(--tx-1)', outline: 'none', boxSizing: 'border-box' }} />
-      )}
-    </div>
-  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--tx-1)', flex: 1 }}>
-          事故复盘 <span style={{ color: 'var(--tx-3)', fontWeight: 400, fontSize: 12 }}>· 共 {incidents.length} 条</span>
+          踩坑记录
+          <span style={{ color: 'var(--tx-3)', fontWeight: 400, fontSize: 12 }}>
+            {' '}· 来自 session-log.md · 共 {linked.length} 条
+          </span>
         </h3>
-        {editingId !== 'new' && (
-          <button className="btn btn--primary btn--sm" onClick={startNew}>
-            <Plus size={11} /> 记录新事故
-          </button>
+        {unlinked.length > 0 && (
+          <div style={{ position: 'relative' }}>
+            <button className="btn btn--sm" onClick={() => setShowLinkMenu(v => !v)}>
+              <Link2 size={11} /> 关联踩坑
+            </button>
+            {showLinkMenu && (
+              <div style={{
+                position: 'absolute', right: 0, top: '110%', zIndex: 50,
+                background: 'var(--bg-0)', border: '1px solid var(--hl-2)',
+                borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                minWidth: 260, maxWidth: 340, maxHeight: 300, overflowY: 'auto', padding: '4px 0',
+              }}>
+                {unlinked.map(p => (
+                  <button key={p.id}
+                    onClick={() => handleLink(p.id)}
+                    disabled={linkingId === p.id}
+                    style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 8,
+                      width: '100%', textAlign: 'left', background: 'none',
+                      border: 'none', padding: '8px 14px', fontSize: 12.5,
+                      color: 'var(--tx-1)', cursor: 'pointer', lineHeight: 1.4,
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-1)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                    {linkingId === p.id ? <Spinner size={11} /> : <span style={{ flexShrink: 0 }}>⚠️</span>}
+                    <span>{p.problem.length > 60 ? p.problem.slice(0, 60) + '…' : p.problem}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
-      {/* New incident form */}
-      {editingId === 'new' && (
-        <div className="subcard" style={{ borderColor: 'var(--ac-1)', borderWidth: 2 }}>
-          <div className="subcard__hd" style={{ marginBottom: 14 }}>
-            <h3 className="subcard__title">记录新事故</h3>
-            <button onClick={cancelEdit} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', padding: 4 }}><X size={14} /></button>
-          </div>
-          <IncidentForm draft={draft} setDraft={setDraft} Field={Field} />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-            <button className="btn btn--sm" onClick={cancelEdit}>取消</button>
-            <button className="btn btn--primary btn--sm" onClick={save} disabled={!draft.title.trim() || saving}>
-              {saving ? <><Spinner size={11} /> 保存中…</> : <><Check size={11} /> 保存</>}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Incident list */}
       {loading ? (
-        <div style={{ padding: 32, textAlign: 'center', color: 'var(--tx-3)', fontSize: 13 }}>加载中…</div>
-      ) : incidents.length === 0 && editingId !== 'new' ? (
+        <div style={{ padding: 32, textAlign: 'center', color: 'var(--tx-3)' }}><Spinner size={20} /></div>
+      ) : linked.length === 0 ? (
         <div className="subcard" style={{ textAlign: 'center', padding: '40px 24px' }}>
-          <div style={{ fontSize: 28, marginBottom: 10 }}>📋</div>
-          <div style={{ fontSize: 13, color: 'var(--tx-2)', marginBottom: 6 }}>暂无事故记录</div>
-          <div style={{ fontSize: 12, color: 'var(--tx-3)' }}>遇到问题时及时记录，避免重复踩坑</div>
+          <div style={{ fontSize: 28, marginBottom: 10 }}>⚠️</div>
+          <div style={{ fontSize: 13, color: 'var(--tx-2)', marginBottom: 6 }}>暂无关联踩坑记录</div>
+          <div style={{ fontSize: 12, color: 'var(--tx-3)' }}>
+            {all.length > 0
+              ? '点击「关联踩坑」将 session-log.md 中的踩坑记录与本项目关联'
+              : '踩坑库为空 — 在 Claude Code 收工时告诉 Claude 记录踩坑，下次自动显示在这里'}
+          </div>
         </div>
       ) : (
-        incidents.map(inc => (
-          <div key={inc.id} className="subcard" style={{ borderLeft: `3px solid ${SEVERITY_COLORS[inc.severity]}` }}>
-            {editingId === inc.id ? (
-              <>
-                <div className="subcard__hd" style={{ marginBottom: 14 }}>
-                  <h3 className="subcard__title">编辑事故</h3>
-                  <button onClick={cancelEdit} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', padding: 4 }}><X size={14} /></button>
-                </div>
-                <IncidentForm draft={draft} setDraft={setDraft} Field={Field} />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-                  <button className="btn btn--sm" onClick={cancelEdit}>取消</button>
-                  <button className="btn btn--primary btn--sm" onClick={save} disabled={!draft.title.trim() || saving}>
-                    {saving ? <><Spinner size={11} /> 保存中…</> : <><Check size={11} /> 保存</>}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                {/* Collapsed header */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
-                  onClick={() => setExpandedId(expandedId === inc.id ? null : inc.id)}>
-                  <span style={{ fontSize: 15 }}>{SEVERITY_ICONS[inc.severity]}</span>
-                  <span className="mono" style={{ fontSize: 11, color: 'var(--tx-3)', flexShrink: 0 }}>{inc.date}</span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-1)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inc.title}</span>
-                  <Badge tone={inc.severity === 'critical' ? 'warn' : 'soft'} style={{ flexShrink: 0 }}>{inc.severity}</Badge>
-                  {expandedId === inc.id ? <ChevronUp size={13} style={{ color: 'var(--tx-3)', flexShrink: 0 }} /> : <ChevronDown size={13} style={{ color: 'var(--tx-3)', flexShrink: 0 }} />}
-                </div>
+        linked.map(pitfall => (
+          <div key={pitfall.id} className="subcard" style={{ borderLeft: '3px solid var(--warn)' }}>
+            {/* Header row */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              <div
+                style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1, cursor: 'pointer', minWidth: 0 }}
+                onClick={() => setExpandedId(expandedId === pitfall.id ? null : pitfall.id)}>
+                <span style={{ fontSize: 15, flexShrink: 0, marginTop: 1 }}>⚠️</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-1)', lineHeight: 1.5, flex: 1 }}>
+                  {pitfall.problem}
+                </span>
+                {expandedId === pitfall.id
+                  ? <ChevronUp size={13} style={{ color: 'var(--tx-3)', flexShrink: 0, marginTop: 3 }} />
+                  : <ChevronDown size={13} style={{ color: 'var(--tx-3)', flexShrink: 0, marginTop: 3 }} />}
+              </div>
+              <button
+                onClick={() => handleUnlink(pitfall.id)}
+                title="取消关联"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', padding: 4, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                <Link2Off size={12} />
+              </button>
+            </div>
 
-                {/* Expanded content */}
-                {expandedId === inc.id && (
-                  <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {[
-                      { label: '问题描述', value: inc.problem },
-                      { label: '根因分析', value: inc.rootCause },
-                      { label: '解决方案', value: inc.solution },
-                      { label: '经验教训', value: inc.lessons },
-                    ].filter(f => f.value?.trim()).map(f => (
-                      <div key={f.label}>
-                        <div style={{ fontSize: 11, color: 'var(--tx-3)', marginBottom: 4 }}>{f.label}</div>
-                        <div style={{ fontSize: 13, color: 'var(--tx-2)', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>{f.value}</div>
-                      </div>
-                    ))}
-                    {inc.tags.length > 0 && (
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {inc.tags.map(t => <Chip key={t}>{t}</Chip>)}
-                      </div>
-                    )}
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--hl-1)', paddingTop: 10 }}>
-                      <button className="btn btn--ghost btn--sm" onClick={() => startEdit(inc)}><Edit2 size={11} /> 编辑</button>
-                      <button className="btn btn--sm" onClick={() => del(inc.id)} disabled={deletingId === inc.id}>
-                        {deletingId === inc.id ? <Spinner size={11} /> : <Trash2 size={11} />}
-                      </button>
-                    </div>
+            {/* Expanded */}
+            {expandedId === pitfall.id && (
+              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10, paddingLeft: 22 }}>
+                {pitfall.solution && (
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--tx-3)', marginBottom: 4 }}>解法</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--tx-2)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{pitfall.solution}</div>
                   </div>
                 )}
-              </>
+                {pitfall.lessons && (
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--tx-3)', marginBottom: 4 }}>教训</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--ok)', lineHeight: 1.7, whiteSpace: 'pre-wrap', fontWeight: 500 }}>{pitfall.lessons}</div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         ))
       )}
-    </div>
-  );
-}
-
-function IncidentForm({ draft, setDraft, Field }: {
-  draft: Omit<Incident, 'id' | 'createdAt' | 'updatedAt'>;
-  setDraft: React.Dispatch<React.SetStateAction<Omit<Incident, 'id' | 'createdAt' | 'updatedAt'>>>;
-  Field: (props: { label: string; field: keyof typeof draft; multiline?: boolean }) => React.ReactElement;
-}) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10 }}>
-        <Field label="标题 *" field="title" />
-        <div>
-          <label style={{ fontSize: 11, color: 'var(--tx-3)', display: 'block', marginBottom: 4 }}>日期</label>
-          <input type="date" value={draft.date} onChange={e => setDraft(p => ({ ...p, date: e.target.value }))}
-            style={{ background: 'var(--bg-1)', border: '1px solid var(--hl-2)', borderRadius: 6, padding: '7px 10px', fontSize: 12.5, color: 'var(--tx-1)', outline: 'none', fontFamily: 'inherit' }} />
-        </div>
-      </div>
-      <div>
-        <label style={{ fontSize: 11, color: 'var(--tx-3)', display: 'block', marginBottom: 6 }}>严重程度</label>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {(['critical', 'major', 'minor'] as const).map(s => (
-            <button key={s} onClick={() => setDraft(p => ({ ...p, severity: s }))} style={{
-              padding: '5px 12px', borderRadius: 6, border: `1px solid ${draft.severity === s ? SEVERITY_COLORS[s] : 'var(--hl-2)'}`,
-              background: draft.severity === s ? `${SEVERITY_COLORS[s]}20` : 'transparent',
-              color: draft.severity === s ? SEVERITY_COLORS[s] : 'var(--tx-3)',
-              cursor: 'pointer', fontSize: 12, fontWeight: draft.severity === s ? 600 : 400,
-            }}>{SEVERITY_ICONS[s]} {s}</button>
-          ))}
-        </div>
-      </div>
-      <Field label="问题描述" field="problem" multiline />
-      <Field label="根因分析" field="rootCause" multiline />
-      <Field label="解决方案" field="solution" multiline />
-      <Field label="经验教训" field="lessons" multiline />
     </div>
   );
 }
@@ -342,7 +260,7 @@ export default function ProjectDetailClient({
     { id: 'claude', label: 'Claude', cn: '配置' },
     { id: 'deploy', label: 'Deploy', cn: '部署' },
     ...(hasRunCommands ? [{ id: 'run', label: 'Run', cn: '命令' }] : []),
-    { id: 'postmortem', label: 'Postmortem', cn: '复盘' },
+    { id: 'postmortem', label: 'Pitfalls', cn: '踩坑' },
   ];
 
   const healthItems = [

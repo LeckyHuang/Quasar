@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Sparkles, Folder, RefreshCw, Settings,
-  Search, ChevronLeft, Zap, GitFork,
+  Search, ChevronLeft, Zap, GitFork, AlertTriangle,
 } from 'lucide-react';
 
 interface NavItemProps {
@@ -72,6 +72,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCmdK, skill
         <NavItem href="/projects" icon={<Folder size={16} />} label="Projects" cn="项目" meta={projectCount} active={isActive('/projects')} />
         <NavItem href="/sync" icon={<RefreshCw size={16} />} label="Sync" cn="同步" badge={syncAlerts} active={isActive('/sync')} />
         <NavItem href="/graph" icon={<GitFork size={16} />} label="Graph" cn="关联图" active={isActive('/graph')} />
+        <NavItem href="/pitfalls" icon={<AlertTriangle size={16} />} label="Pitfalls" cn="踩坑库" active={isActive('/pitfalls')} />
         <NavItem href="/settings" icon={<Settings size={16} />} label="Settings" cn="设置" active={isActive('/settings')} />
       </div>
 
