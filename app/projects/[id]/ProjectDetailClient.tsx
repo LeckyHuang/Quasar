@@ -27,13 +27,16 @@ function PostmortemTab({ projectId }: { projectId: string }) {
 
   const load = async () => {
     setLoading(true);
-    const [linkedRes, allRes] = await Promise.all([
-      fetch(`/api/pitfalls?projectId=${projectId}`).then(r => r.json()).catch(() => []),
-      fetch('/api/pitfalls').then(r => r.json()).catch(() => []),
-    ]);
-    setLinked(linkedRes);
-    setAll(allRes);
-    setLoading(false);
+    try {
+      const [linkedRes, allRes] = await Promise.all([
+        fetch(`/api/pitfalls?projectId=${projectId}`).then(r => r.json()).catch(() => []),
+        fetch('/api/pitfalls').then(r => r.json()).catch(() => []),
+      ]);
+      setLinked(Array.isArray(linkedRes) ? linkedRes : []);
+      setAll(Array.isArray(allRes) ? allRes : []);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, [projectId]);

@@ -198,15 +198,23 @@ export default function LessonsPage() {
 
   const load = async () => {
     setLoading(true);
-    const [pf, prj, sk] = await Promise.all([
-      fetch('/api/pitfalls').then(r => r.json()).catch(() => []),
-      fetch('/api/projects').then(r => r.json()).catch(() => []),
-      fetch('/api/skills').then(r => r.json()).catch(() => []),
-    ]);
-    setPitfalls(pf);
-    setProjects((prj as { id: string; name: string }[]).map(p => ({ id: p.id, name: p.name })));
-    setSkills((sk as { id: string; name: string }[]).map(s => ({ id: s.id, name: s.name })));
-    setLoading(false);
+    try {
+      const [pf, prj, sk] = await Promise.all([
+        fetch('/api/pitfalls').then(r => r.json()).catch(() => []),
+        fetch('/api/projects').then(r => r.json()).catch(() => ({ projects: [] })),
+        fetch('/api/skills').then(r => r.json()).catch(() => ({ skills: [] })),
+      ]);
+      // /api/pitfalls → Pitfall[]（裸数组）
+      // /api/projects → { projects: ProjectMeta[], ... }
+      // /api/skills   → { skills: SkillMeta[], ... }
+      const projectList: { id: string; name: string }[] = Array.isArray(prj) ? prj : (prj.projects ?? []);
+      const skillList: { id: string; name: string }[] = Array.isArray(sk) ? sk : (sk.skills ?? []);
+      setPitfalls(Array.isArray(pf) ? pf : []);
+      setProjects(projectList.map(p => ({ id: p.id, name: p.name })));
+      setSkills(skillList.map(s => ({ id: s.id, name: s.name })));
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
