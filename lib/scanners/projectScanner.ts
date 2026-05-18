@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import os from 'os'
 import { execFileSync } from 'child_process'
 import type { ProjectMeta } from '@/types'
 
@@ -127,7 +128,7 @@ function calculateHealthScore(project: Omit<ProjectMeta, 'healthScore'>): number
 }
 
 export async function scanProjectsDir(dir: string): Promise<ProjectMeta[]> {
-  const expanded = dir.replace(/^~/, process.env.HOME || '')
+  const expanded = dir.replace(/^~/, os.homedir())
   if (!fs.existsSync(expanded)) return []
 
   const projects: ProjectMeta[] = []

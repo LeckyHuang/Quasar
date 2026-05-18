@@ -1,4 +1,5 @@
 import fs from 'fs'
+import os from 'os'
 import { NextRequest, NextResponse } from 'next/server'
 import { readConfig, writeConfig, isFirstRun } from '@/lib/config'
 import { invalidateCache } from '@/lib/cache'
@@ -15,9 +16,9 @@ export async function PUT(req: NextRequest) {
 
   // Validate dirs exist
   const validateDirs = (dirs: string[]): string[] =>
-    dirs.map(d => d.replace(/^~/, process.env.HOME || '')).filter(d => {
+    dirs.map(d => d.replace(/^~/, os.homedir())).filter(d => {
       try { return fs.existsSync(d) } catch { return false }
-    }).map(d => d.replace(process.env.HOME || '', '~'))
+    }).map(d => d.replace(os.homedir(), '~'))
 
   const updated = {
     ...current,

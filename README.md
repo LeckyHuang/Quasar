@@ -1,5 +1,7 @@
 # QUASAR
 
+[English](./README.md) · [中文](./README.zh.md)
+
 **Local dashboard for managing AI Coding Agent skills and projects.**
 
 QUASAR is a self-hosted web app that gives you a unified view of all your AI agent skills and code projects — git status, health scores, deployment configs, usage history, and more. Think of it as TablePlus, but for your AI development assets.

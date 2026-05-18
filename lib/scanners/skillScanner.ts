@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import os from 'os'
 import matter from 'gray-matter'
 import type { SkillMeta } from '@/types'
 
@@ -66,7 +67,7 @@ function getGitBranch(skillPath: string): string | undefined {
 }
 
 export async function scanSkillsDir(dir: string, usageMap: Record<string, number> = {}): Promise<SkillMeta[]> {
-  const expanded = dir.replace(/^~/, process.env.HOME || '')
+  const expanded = dir.replace(/^~/, os.homedir())
   if (!fs.existsSync(expanded)) return []
 
   const skills: SkillMeta[] = []

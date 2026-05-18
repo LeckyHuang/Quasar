@@ -5,8 +5,9 @@ import { invalidateCache } from '@/lib/cache'
 import type { SyncResult } from '@/types'
 import fs from 'fs'
 import path from 'path'
+import os from 'os'
 
-const LOG_PATH = path.join(process.env.HOME || '', '.claude', 'quasar-sync-log.json')
+const LOG_PATH = path.join(os.homedir(), '.claude', 'quasar-sync-log.json')
 
 function appendLog(entry: { name: string; type: string; action: string; success: boolean; message: string }) {
   try {

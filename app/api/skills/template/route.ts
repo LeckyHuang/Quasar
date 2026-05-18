@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as fs from 'fs'
 import * as path from 'path'
+import os from 'os'
 
 function expandPath(p: string) {
-  if (p.startsWith('~/')) return path.join(process.env.HOME || '', p.slice(2))
+  if (p.startsWith('~/')) return path.join(os.homedir(), p.slice(2))
   return p
 }
 
