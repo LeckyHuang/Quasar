@@ -1,6 +1,7 @@
 {
   "name": "quasar",
   "version": "0.1.0",
+  "description": "Local dashboard for managing AI Coding Agent skills and projects",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,9 +10,13 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "chokidar": "^5.0.0",
+    "gray-matter": "^4.0.3",
+    "lucide-react": "^1.16.0",
     "next": "16.2.6",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "simple-git": "^3.36.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

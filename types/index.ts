@@ -1,0 +1,63 @@
+export interface SkillMeta {
+  id: string
+  name: string
+  description: string
+  category: string
+  tags: string[]
+  triggerWords: string[]
+  path: string
+  lastModified: Date
+  hasGit: boolean
+  gitRemote?: string
+  gitBranch?: string
+  usageCount: number
+  templates: string[]
+  sourceDir: string
+}
+
+export interface ProjectMeta {
+  id: string
+  name: string
+  description: string
+  path: string
+  type: 'fullstack' | 'frontend' | 'backend' | 'skill-source' | 'content' | 'tool' | 'unknown'
+  techStack: string[]
+  hasGitRemote: boolean
+  gitRemote?: string
+  gitBranch?: string
+  lastCommit?: { message: string; date: string }
+  gitAhead: number
+  gitBehind: number
+  hasClaudeConfig: boolean
+  hasAgentsConfig: boolean
+  hasDeployConfig: boolean
+  deployFiles: string[]
+  lastModified: Date
+  healthScore: number
+  sourceDir: string
+}
+
+export interface QuasarConfig {
+  skillsDirs: string[]
+  projectsDirs: string[]
+  appearance: 'dark' | 'light' | 'system'
+  accent?: string
+  autoScan: boolean
+  scanIntervalMs: number
+}
+
+export interface CacheData {
+  skills: SkillMeta[]
+  projects: ProjectMeta[]
+  lastScanned: string
+  version: number
+}
+
+export interface SyncResult {
+  id: string
+  type: 'skill' | 'project'
+  action: 'pull' | 'push'
+  success: boolean
+  message: string
+  timestamp: string
+}
