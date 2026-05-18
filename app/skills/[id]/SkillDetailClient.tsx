@@ -3,8 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, FolderOpen, ExternalLink, GitBranch, MoreHorizontal, Copy, Plus, ArrowUp, ArrowDown, RefreshCw, File, Folder } from 'lucide-react';
-import { CatChip, Heat, Badge, Chip, AheadBehind, BarChart, Markdown, Bi } from '@/components/ui';
+import { ChevronLeft, FolderOpen, ExternalLink, GitBranch, MoreHorizontal, Copy, Plus, ArrowUp, ArrowDown, RefreshCw, File, Link2, Link2Off } from 'lucide-react';
+import { CatChip, Heat, Badge, Chip, AheadBehind, BarChart, Markdown, Bi, Spinner } from '@/components/ui';
 
 interface SkillData {
   id: string;
@@ -148,6 +148,163 @@ function EvalTab({ skillId, skillPath }: { skillId: string; skillPath: string })
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ─── LessonsTab — session-log sourced pitfalls linked to this skill ─── */
+interface SkillPitfall {
+  id: string;
+  problem: string;
+  solution: string;
+  lessons: string;
+  linkedProjects: string[];
+  linkedSkills: string[];
+}
+
+function LessonsTab({ skillId }: { skillId: string }) {
+  const [linked, setLinked] = useState<SkillPitfall[]>([]);
+  const [all, setAll] = useState<SkillPitfall[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showLinkMenu, setShowLinkMenu] = useState(false);
+  const [linkingId, setLinkingId] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    const [linkedRes, allRes] = await Promise.all([
+      fetch(`/api/pitfalls?skillId=${skillId}`).then(r => r.json()).catch(() => []),
+      fetch('/api/pitfalls').then(r => r.json()).catch(() => []),
+    ]);
+    setLinked(linkedRes);
+    setAll(allRes);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [skillId]);
+
+  const unlinked = all.filter(p => !linked.some(l => l.id === p.id));
+
+  const handleLink = async (pitfallId: string) => {
+    setLinkingId(pitfallId);
+    try {
+      await fetch('/api/pitfalls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pitfallId, skillId }),
+      });
+      const found = all.find(p => p.id === pitfallId);
+      if (found) setLinked(prev => [...prev, found]);
+    } finally {
+      setLinkingId(null);
+      setShowLinkMenu(false);
+    }
+  };
+
+  const handleUnlink = async (pitfallId: string) => {
+    await fetch(`/api/pitfalls?pitfallId=${pitfallId}&skillId=${skillId}`, { method: 'DELETE' });
+    setLinked(prev => prev.filter(p => p.id !== pitfallId));
+    if (expandedId === pitfallId) setExpandedId(null);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--tx-1)', flex: 1 }}>
+          教训集
+          <span style={{ color: 'var(--tx-3)', fontWeight: 400, fontSize: 12 }}>
+            {' '}· 来自 session-log.md · 共 {linked.length} 条
+          </span>
+        </h3>
+        {unlinked.length > 0 && (
+          <div style={{ position: 'relative' }}>
+            <button className="btn btn--sm" onClick={() => setShowLinkMenu(v => !v)}>
+              <Link2 size={11} /> 关联教训
+            </button>
+            {showLinkMenu && (
+              <div style={{
+                position: 'absolute', right: 0, top: '110%', zIndex: 50,
+                background: 'var(--bg-0)', border: '1px solid var(--hl-2)',
+                borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                minWidth: 260, maxWidth: 340, maxHeight: 300, overflowY: 'auto', padding: '4px 0',
+              }}>
+                {unlinked.map(p => (
+                  <button key={p.id}
+                    onClick={() => handleLink(p.id)}
+                    disabled={linkingId === p.id}
+                    style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 8,
+                      width: '100%', textAlign: 'left', background: 'none',
+                      border: 'none', padding: '8px 14px', fontSize: 12.5,
+                      color: 'var(--tx-1)', cursor: 'pointer', lineHeight: 1.4,
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-1)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                    {linkingId === p.id ? <Spinner size={11} /> : <span style={{ flexShrink: 0 }}>⚠️</span>}
+                    <span>{p.problem.length > 60 ? p.problem.slice(0, 60) + '…' : p.problem}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div style={{ padding: 32, textAlign: 'center', color: 'var(--tx-3)' }}><Spinner size={20} /></div>
+      ) : linked.length === 0 ? (
+        <div className="subcard" style={{ textAlign: 'center', padding: '40px 24px' }}>
+          <div style={{ fontSize: 28, marginBottom: 10 }}>⚠️</div>
+          <div style={{ fontSize: 13, color: 'var(--tx-2)', marginBottom: 6 }}>暂无关联教训</div>
+          <div style={{ fontSize: 12, color: 'var(--tx-3)' }}>
+            {all.length > 0
+              ? '点击「关联教训」将 session-log.md 中的踩坑记录与本 Skill 关联'
+              : '教训集为空 — 在 Claude Code 收工时告诉 Claude 记录踩坑内容'}
+          </div>
+        </div>
+      ) : (
+        linked.map(pitfall => (
+          <div key={pitfall.id} className="subcard" style={{ borderLeft: '3px solid var(--warn)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              <div
+                style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1, cursor: 'pointer', minWidth: 0 }}
+                onClick={() => setExpandedId(expandedId === pitfall.id ? null : pitfall.id)}>
+                <span style={{ fontSize: 15, flexShrink: 0, marginTop: 1 }}>⚠️</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-1)', lineHeight: 1.5, flex: 1 }}>
+                  {pitfall.problem}
+                </span>
+                {expandedId === pitfall.id
+                  ? <span style={{ color: 'var(--tx-3)', flexShrink: 0, marginTop: 3, fontSize: 11 }}>▲</span>
+                  : <span style={{ color: 'var(--tx-3)', flexShrink: 0, marginTop: 3, fontSize: 11 }}>▼</span>}
+              </div>
+              <button
+                onClick={() => handleUnlink(pitfall.id)}
+                title="取消关联"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', padding: 4, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                <Link2Off size={12} />
+              </button>
+            </div>
+
+            {expandedId === pitfall.id && (
+              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10, paddingLeft: 22 }}>
+                {pitfall.solution && (
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--tx-3)', marginBottom: 4 }}>解法</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--tx-2)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{pitfall.solution}</div>
+                  </div>
+                )}
+                {pitfall.lessons && (
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--tx-3)', marginBottom: 4 }}>教训</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--ok)', lineHeight: 1.7, whiteSpace: 'pre-wrap', fontWeight: 500 }}>{pitfall.lessons}</div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))
+      )}
     </div>
   );
 }
@@ -490,6 +647,7 @@ export default function SkillDetailClient({ skill, skillMdContent, commits, temp
     { id: 'templates', label: 'Templates', cn: '模板库' },
     { id: 'git', label: 'Git', cn: '' },
     { id: 'eval', label: 'Eval', cn: '评估' },
+    { id: 'lessons', label: 'Lessons', cn: '教训' },
   ];
 
   return (
@@ -598,6 +756,8 @@ export default function SkillDetailClient({ skill, skillMdContent, commits, temp
           {tab === 'git' && <GitTab skill={skill} commits={commits} />}
 
           {tab === 'eval' && <EvalTab skillId={skill.id} skillPath={skill.path} />}
+
+          {tab === 'lessons' && <LessonsTab skillId={skill.id} />}
         </div>
       </div>
     </div>

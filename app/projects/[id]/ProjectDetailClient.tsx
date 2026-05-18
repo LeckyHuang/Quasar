@@ -13,6 +13,7 @@ interface Pitfall {
   solution: string;
   lessons: string;
   linkedProjects: string[];
+  linkedSkills: string[];
 }
 
 /* ─── PostmortemTab — session-log sourced pitfalls ─── */
@@ -66,7 +67,7 @@ function PostmortemTab({ projectId }: { projectId: string }) {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--tx-1)', flex: 1 }}>
-          踩坑记录
+          教训集
           <span style={{ color: 'var(--tx-3)', fontWeight: 400, fontSize: 12 }}>
             {' '}· 来自 session-log.md · 共 {linked.length} 条
           </span>
@@ -260,7 +261,7 @@ export default function ProjectDetailClient({
     { id: 'claude', label: 'Claude', cn: '配置' },
     { id: 'deploy', label: 'Deploy', cn: '部署' },
     ...(hasRunCommands ? [{ id: 'run', label: 'Run', cn: '命令' }] : []),
-    { id: 'postmortem', label: 'Pitfalls', cn: '踩坑' },
+    { id: 'postmortem', label: 'Lessons', cn: '教训' },
   ];
 
   const healthItems = [
