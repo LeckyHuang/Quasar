@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, FolderOpen, ExternalLink, GitBranch, MoreHorizontal, Copy, Plus, ArrowUp, ArrowDown, RefreshCw, File, Folder } from 'lucide-react';
@@ -31,6 +31,125 @@ interface CommitData {
 interface TemplateFile {
   name: string;
   size: number;
+}
+
+/* ─── Darwin Eval Types ─── */
+interface DarwinRun {
+  timestamp: string;
+  commit: string;
+  scoreBefore: number;
+  scoreAfter: number;
+  status: string;
+  dimension: string;
+  mode: string;
+}
+
+/* ─── EvalTab Component ─── */
+function EvalTab({ skillId, skillPath }: { skillId: string; skillPath: string }) {
+  const [runs, setRuns] = useState<DarwinRun[] | null | undefined>(undefined);
+
+  useEffect(() => {
+    fetch(`/api/skills/evals?id=${skillId}`)
+      .then(r => r.json())
+      .then(d => setRuns(d.runs))
+      .catch(() => setRuns(null));
+  }, [skillId]);
+
+  const openTerminal = () => fetch('/api/open', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'terminal', path: skillPath }),
+  });
+
+  if (runs === undefined) {
+    return <div style={{ padding: 48, textAlign: 'center', color: 'var(--tx-3)', fontSize: 13 }}>加载中…</div>;
+  }
+
+  if (!runs || runs.length === 0) {
+    return (
+      <div className="subcard" style={{ textAlign: 'center', padding: '48px 24px' }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>🧬</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx-1)', marginBottom: 8 }}>尚未运行 Darwin 评估</div>
+        <div style={{ fontSize: 13, color: 'var(--tx-3)', marginBottom: 20 }}>
+          在技能目录下运行 darwin-skill，结果将写入 <span className="mono" style={{ fontSize: 11 }}>results.tsv</span>
+        </div>
+        <button className="btn btn--primary" onClick={openTerminal}>在终端打开 →</button>
+      </div>
+    );
+  }
+
+  // Latest run stats
+  const latest = runs[runs.length - 1];
+  const currentScore = latest.scoreAfter;
+  const improved = runs.filter(r => r.status === 'improved').length;
+  const latestTs = new Date(latest.timestamp);
+  const daysAgo = Math.floor((Date.now() - latestTs.getTime()) / 86400000);
+  const timeLabel = daysAgo === 0 ? '今天' : daysAgo === 1 ? '昨天' : `${daysAgo}d ago`;
+
+  const statusColor = (s: string) =>
+    s === 'improved' ? 'var(--ok)' : s === 'rolled_back' ? 'var(--bad)' : 'var(--tx-3)';
+  const statusIcon = (s: string) =>
+    s === 'improved' ? '✓' : s === 'rolled_back' ? '↩' : '─';
+
+  // Score trend for bar chart (last 10) — BarChart expects { date, count }[]
+  const trendData = runs.slice(-10).map(r => ({ date: r.timestamp.slice(0, 10), count: r.scoreAfter }));
+  const trendNumbers = runs.slice(-10).map(r => r.scoreAfter);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Score overview */}
+      <div className="subcard">
+        <div className="subcard__hd">
+          <h3 className="subcard__title">🧬 Darwin 评估概况</h3>
+          <button className="btn btn--sm" onClick={openTerminal}>在终端运行 →</button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, margin: '12px 0' }}>
+          {[
+            { label: '当前分数', value: `${currentScore} / 100`, mono: true },
+            { label: '上次运行', value: timeLabel, mono: false },
+            { label: `共 ${runs.length} 轮`, value: `${improved} 轮改进`, mono: false },
+          ].map(item => (
+            <div key={item.label} style={{ background: 'var(--bg-1)', borderRadius: 8, padding: '12px 16px' }}>
+              <div style={{ fontSize: 11, color: 'var(--tx-3)', marginBottom: 6 }}>{item.label}</div>
+              <div style={{ fontSize: item.mono ? 22 : 15, fontWeight: 700, color: 'var(--ac-1)', fontFamily: item.mono ? 'var(--f-mono)' : 'inherit' }}>
+                {item.value}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: 'var(--tx-3)', marginBottom: 8 }}>分数趋势（最近 {trendNumbers.length} 轮）</div>
+          <BarChart data={trendNumbers} />
+        </div>
+      </div>
+
+      {/* Run history */}
+      <div className="subcard">
+        <div className="subcard__hd">
+          <h3 className="subcard__title">优化历史</h3>
+          <Badge tone="soft">{runs.length} 轮</Badge>
+        </div>
+        <div className="commits">
+          {[...runs].reverse().map((r, i) => (
+            <div key={i} className="commit" style={{ gridTemplateColumns: '1fr auto auto auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                <span className="commit__msg">{r.dimension || '—'}</span>
+                <span className="mono" style={{ fontSize: 10, color: 'var(--tx-3)' }}>{r.timestamp.slice(0, 16)} · {r.commit.slice(0, 7)}</span>
+              </div>
+              <span className="mono" style={{ fontSize: 12, color: 'var(--tx-3)', alignSelf: 'center' }}>
+                {r.scoreBefore} → {r.scoreAfter}
+              </span>
+              <Badge tone={r.scoreBefore < r.scoreAfter ? 'ok' : r.scoreBefore > r.scoreAfter ? 'warn' : 'soft'}>
+                {r.scoreAfter > r.scoreBefore ? `+${r.scoreAfter - r.scoreBefore}` : r.scoreAfter - r.scoreBefore}
+              </Badge>
+              <span style={{ fontSize: 13, color: statusColor(r.status), alignSelf: 'center', fontFamily: 'var(--f-mono)' }}>
+                {statusIcon(r.status)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function heatLevel(count: number): 'hot' | 'warm' | 'cold' {
@@ -370,6 +489,7 @@ export default function SkillDetailClient({ skill, skillMdContent, commits, temp
     { id: 'skillmd', label: 'SKILL.md', cn: '' },
     { id: 'templates', label: 'Templates', cn: '模板库' },
     { id: 'git', label: 'Git', cn: '' },
+    { id: 'eval', label: 'Eval', cn: '评估' },
   ];
 
   return (
@@ -476,6 +596,8 @@ export default function SkillDetailClient({ skill, skillMdContent, commits, temp
           )}
 
           {tab === 'git' && <GitTab skill={skill} commits={commits} />}
+
+          {tab === 'eval' && <EvalTab skillId={skill.id} skillPath={skill.path} />}
         </div>
       </div>
     </div>
