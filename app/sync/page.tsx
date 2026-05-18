@@ -24,17 +24,21 @@ interface LogEntry {
   message: string;
 }
 
-function SyncListBlock({ title, items, busyMap, onAction }: {
+function SyncListBlock({ title, items, busyMap, onAction, onSyncAll }: {
   title: React.ReactNode;
   items: SyncItem[];
   busyMap: Record<string, string>;
   onAction: (id: string, type: string, action: string) => void;
+  onSyncAll: () => void;
 }) {
+  const hasPending = items.some(i => i.ahead > 0);
   return (
     <div className="sync-list">
       <div className="sync-list__hd">
         <span className="sync-list__title">{title}</span>
-        <button className="btn btn--ghost btn--sm">Sync all <RefreshCw size={11} /></button>
+        <button className="btn btn--ghost btn--sm" onClick={onSyncAll} disabled={!hasPending}>
+          Sync all <RefreshCw size={11} />
+        </button>
       </div>
       {items.length === 0 && (
         <div style={{ padding: '20px 16px', color: 'var(--tx-3)', fontSize: 12 }}>
@@ -115,7 +119,7 @@ export default function SyncPage() {
 
   const skillItems: SyncItem[] = skills
     .filter(s => s.hasGit)
-    .map(s => ({ id: s.id, name: s.name, path: s.path, ahead: 0, behind: 0, type: 'skill' as const }));
+    .map(s => ({ id: s.id, name: s.name, path: s.path, ahead: s.gitAhead, behind: s.gitBehind, type: 'skill' as const }));
 
   const projItems: SyncItem[] = projects
     .filter(p => p.hasGitRemote)
@@ -199,12 +203,14 @@ export default function SyncPage() {
                 items={skillItems}
                 busyMap={busyMap}
                 onAction={onAction}
+                onSyncAll={() => skillItems.filter(i => i.ahead > 0).forEach(i => onAction(i.id, i.type, 'push'))}
               />
               <SyncListBlock
                 title={<><Folder size={13} style={{ verticalAlign: '-2px', marginRight: 6, color: 'var(--ac-1)' }} />Projects <span className="cn-sub">项目 · {projItems.length} with remote</span></>}
                 items={projItems}
                 busyMap={busyMap}
                 onAction={onAction}
+                onSyncAll={() => projItems.filter(i => i.ahead > 0).forEach(i => onAction(i.id, i.type, 'push'))}
               />
             </div>
           )}

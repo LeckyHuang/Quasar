@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ChevronLeft, FolderOpen, ExternalLink, GitBranch, MoreHorizontal, Copy, Plus, ArrowUp, ArrowDown, RefreshCw, File, Folder } from 'lucide-react';
 import { CatChip, Heat, Badge, Chip, AheadBehind, BarChart, Markdown, Bi } from '@/components/ui';
 
@@ -343,6 +344,7 @@ export default function SkillDetailClient({ skill, skillMdContent, commits, temp
   relatedProjects: { id: string; name: string }[];
   usageTimeline: { date: string; count: number }[];
 }) {
+  const router = useRouter();
   const [tab, setTab] = useState('overview');
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string | null>(null);
@@ -374,18 +376,16 @@ export default function SkillDetailClient({ skill, skillMdContent, commits, temp
     <div className="page">
       <div className="page__top">
         <div className="page__crumbs">
-          <Link href="/skills" style={{ textDecoration: 'none' }}>
-            <button style={{ appearance: 'none', border: 0, background: 'transparent', color: 'var(--tx-3)', padding: 0, cursor: 'default', fontSize: 13 }}>
-              Skills
-            </button>
-          </Link>
+          <button onClick={() => router.back()} style={{ appearance: 'none', border: 0, background: 'transparent', color: 'var(--tx-3)', padding: 0, cursor: 'pointer', fontSize: 13 }}>
+            Skills
+          </button>
           <span className="page__crumbs-sep">/</span>
           <span className="page__crumb-current mono">{skill.name}</span>
         </div>
         <div className="page__top-actions">
-          <Link href="/skills" className="btn btn--ghost btn--sm" style={{ textDecoration: 'none' }}>
+          <button className="btn btn--ghost btn--sm" onClick={() => router.back()}>
             <ChevronLeft size={12} /> Back · 返回
-          </Link>
+          </button>
         </div>
       </div>
 

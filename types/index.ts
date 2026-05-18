@@ -10,6 +10,8 @@ export interface SkillMeta {
   hasGit: boolean
   gitRemote?: string
   gitBranch?: string
+  gitAhead: number
+  gitBehind: number
   usageCount: number
   templates: string[]
   sourceDir: string

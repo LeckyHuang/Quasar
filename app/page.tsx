@@ -1,7 +1,8 @@
 import { getData } from '@/lib/dataService';
-import { ArrowUp, ArrowDown, RefreshCw, Plus, GitCommit, Sparkles, Folder } from 'lucide-react';
+import { ArrowUp, ArrowDown, Sparkles, Folder } from 'lucide-react';
 import Link from 'next/link';
 import { Donut, HealthRing, Badge, Bi } from '@/components/ui';
+import { RefreshButton, QuickActions } from './DashboardActions';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,11 +83,7 @@ export default async function DashboardPage() {
           <span className="muted" style={{ fontSize: 12 }}>
             {lastScanned ? `Indexed ${timeAgo(lastScanned)} · 本地索引` : '未扫描'}
           </span>
-          <form action="/api/scan" method="post" style={{ display: 'inline' }}>
-            <button type="submit" className="btn">
-              <RefreshCw size={13} /> Refresh 刷新
-            </button>
-          </form>
+          <RefreshButton />
         </div>
       </div>
 
@@ -226,17 +223,7 @@ export default async function DashboardPage() {
                 <div className="section__hd">
                   <h2 className="section__title"><Bi en="Quick Actions" cn="快速操作" /></h2>
                 </div>
-                <div className="quick-actions">
-                  <Link href="/settings" className="quick-action" style={{ textDecoration: 'none' }}>
-                    <Plus size={15} />Add scan directory · 添加扫描目录
-                  </Link>
-                  <button className="quick-action">
-                    <RefreshCw size={15} />Refresh all · 刷新全部扫描
-                  </button>
-                  <Link href="/sync" className="quick-action" style={{ textDecoration: 'none' }}>
-                    <GitCommit size={15} />Sync everything · 同步全部资产
-                  </Link>
-                </div>
+                <QuickActions />
               </div>
 
               {/* Top projects by health */}

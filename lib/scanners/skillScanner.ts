@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import { execFileSync } from 'child_process'
 import matter from 'gray-matter'
 import type { SkillMeta } from '@/types'
 
@@ -53,6 +54,18 @@ function getGitRemote(skillPath: string): string | undefined {
   }
 }
 
+function getGitAheadBehind(skillPath: string): { ahead: number; behind: number } {
+  try {
+    const out = execFileSync('git', ['rev-list', '--left-right', '--count', 'HEAD...@{u}'], {
+      cwd: skillPath, encoding: 'utf-8', timeout: 3000, stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim()
+    const [a, b] = out.split(/\s+/).map(Number)
+    return { ahead: a || 0, behind: b || 0 }
+  } catch {
+    return { ahead: 0, behind: 0 }
+  }
+}
+
 function getGitBranch(skillPath: string): string | undefined {
   try {
     const head = path.join(skillPath, '.git', 'HEAD')
@@ -86,6 +99,7 @@ export async function scanSkillsDir(dir: string, usageMap: Record<string, number
       const hasGit = fs.existsSync(path.join(skillPath, '.git'))
       const gitRemote = getGitRemote(skillPath)
       const gitBranch = hasGit ? getGitBranch(skillPath) : undefined
+      const { ahead: gitAhead, behind: gitBehind } = hasGit && gitRemote ? getGitAheadBehind(skillPath) : { ahead: 0, behind: 0 }
 
       const name: string = data.name || entry.name
       const description: string = typeof data.description === 'string' ? data.description : content.slice(0, 300)
@@ -104,6 +118,8 @@ export async function scanSkillsDir(dir: string, usageMap: Record<string, number
         hasGit,
         gitRemote,
         gitBranch,
+        gitAhead,
+        gitBehind,
         usageCount: usageMap[id] || 0,
         templates: getTemplates(skillPath),
         sourceDir: expanded,

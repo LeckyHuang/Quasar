@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ChevronLeft, Terminal, FolderOpen, GitBranch, ArrowUp, ArrowDown, RefreshCw, Clock } from 'lucide-react';
 import { HealthRing, Badge, Chip, AheadBehind, Markdown, Bi, useToast, ToastStack } from '@/components/ui';
+import ConstitutionEditor from '@/components/ConstitutionEditor';
 
 interface ProjectData {
   id: string;
@@ -70,27 +71,12 @@ export default function ProjectDetailClient({
   behind: number;
   extras: ProjectExtras;
 }) {
+  const router = useRouter();
   const [tab, setTab] = useState('readme');
   const [syncing, setSyncing] = useState<string | null>(null);
   const { toasts, show: showToast } = useToast();
-  const [claudeEditing, setClaudeEditing] = useState(false);
   const [claudeDraft, setClaudeDraft] = useState(claudeContent);
   const [claudeSaving, setClaudeSaving] = useState(false);
-
-  const saveClaudeMd = async () => {
-    setClaudeSaving(true);
-    try {
-      const res = await fetch('/api/projects/claudemd', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: project.id, content: claudeDraft }),
-      });
-      const data = await res.json();
-      if (data.ok) { showToast('ok', 'CLAUDE.md saved'); setClaudeEditing(false); }
-      else showToast('err', data.error || 'Save failed');
-    } catch { showToast('err', 'Network error'); }
-    finally { setClaudeSaving(false); }
-  };
 
   const sync = async (action: string) => {
     setSyncing(action);
@@ -129,18 +115,16 @@ export default function ProjectDetailClient({
       <ToastStack toasts={toasts} />
       <div className="page__top">
         <div className="page__crumbs">
-          <Link href="/projects" style={{ textDecoration: 'none' }}>
-            <button style={{ appearance: 'none', border: 0, background: 'transparent', color: 'var(--tx-3)', padding: 0, cursor: 'default', fontSize: 13 }}>
-              Projects
-            </button>
-          </Link>
+          <button onClick={() => router.back()} style={{ appearance: 'none', border: 0, background: 'transparent', color: 'var(--tx-3)', padding: 0, cursor: 'pointer', fontSize: 13 }}>
+            Projects
+          </button>
           <span className="page__crumbs-sep">/</span>
           <span className="page__crumb-current mono">{project.name}</span>
         </div>
         <div className="page__top-actions">
-          <Link href="/projects" className="btn btn--ghost btn--sm" style={{ textDecoration: 'none' }}>
+          <button className="btn btn--ghost btn--sm" onClick={() => router.back()}>
             <ChevronLeft size={12} /> Back · 返回
-          </Link>
+          </button>
         </div>
       </div>
 
@@ -323,38 +307,26 @@ export default function ProjectDetailClient({
                 <div className="subcard">
                   <div className="subcard__hd">
                     <h3 className="subcard__title">CLAUDE.md</h3>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      {claudeContent && <Badge tone="ok" dot>found</Badge>}
-                      {claudeEditing ? (
-                        <>
-                          <button className="btn btn--sm" onClick={() => { setClaudeEditing(false); setClaudeDraft(claudeContent); }}>Cancel</button>
-                          <button className="btn btn--primary btn--sm" onClick={saveClaudeMd} disabled={claudeSaving}>
-                            {claudeSaving ? 'Saving…' : 'Save'}
-                          </button>
-                        </>
-                      ) : (
-                        <button className="btn btn--ghost btn--sm" onClick={() => setClaudeEditing(true)}>
-                          Edit
-                        </button>
-                      )}
-                    </div>
+                    {claudeContent && <Badge tone="ok" dot>found</Badge>}
                   </div>
-                  {claudeEditing ? (
-                    <textarea
-                      value={claudeDraft}
-                      onChange={e => setClaudeDraft(e.target.value)}
-                      style={{
-                        width: '100%', minHeight: 400, background: 'var(--bg-1)',
-                        border: '1px solid var(--hl-2)', borderRadius: 8, padding: '12px 14px',
-                        fontSize: 12.5, fontFamily: 'var(--f-mono)', color: 'var(--tx-1)',
-                        resize: 'vertical', outline: 'none', lineHeight: 1.7,
-                      }}
-                    />
-                  ) : claudeDraft ? (
-                    <Markdown>{claudeDraft}</Markdown>
-                  ) : (
-                    <p style={{ color: 'var(--tx-3)', fontSize: 13 }}>No CLAUDE.md found — click Edit to create one.</p>
-                  )}
+                  <ConstitutionEditor
+                    initialContent={claudeDraft}
+                    onSave={async (content) => {
+                      setClaudeSaving(true);
+                      try {
+                        const res = await fetch('/api/projects/claudemd', {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ projectId: project.id, content }),
+                        });
+                        const data = await res.json();
+                        if (data.ok) { showToast('ok', 'CLAUDE.md saved'); setClaudeDraft(content); }
+                        else showToast('err', data.error || 'Save failed');
+                      } catch { showToast('err', 'Network error'); }
+                      finally { setClaudeSaving(false); }
+                    }}
+                    saving={claudeSaving}
+                  />
                 </div>
                 {agentsContent && (
                   <div className="subcard">
