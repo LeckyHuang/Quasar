@@ -2,9 +2,9 @@
 
 [English](./README.md) · [中文](./README.zh.md)
 
-**本地 AI 编程助手资产管理中心**
+**AI 编程助手资产管理 + LLM 可观测性监控中心**
 
-QUASAR 是一个自托管的 Web 应用，为你的 AI 编程助手 Skills（技能）和代码项目提供统一视图——Git 状态、健康度评分、部署配置、使用历史、关联关系，一览无余。
+QUASAR 是一个自托管的 Web 应用，为你的 AI 编程助手 Skills（技能）和代码项目提供统一视图——Git 状态、健康度评分、部署配置、使用历史、LLM 成本与延迟监控，一览无余。
 
 可以把它理解成面向 AI 开发资产的 TablePlus。
 
@@ -31,14 +31,31 @@ QUASAR 是一个自托管的 Web 应用，为你的 AI 编程助手 Skills（技
 
 ### 项目管理（`/projects`）
 - 卡片网格：技术栈 badges、健康度环、Git ahead/behind、配置告警
-- 详情页五个 Tab：
+- 详情页七个 Tab：
   - **README** — Markdown 渲染
   - **Git** — 远端、分支、ahead/behind（本地读取，无需网络）、最近提交、Push / Pull / Fetch
   - **Claude** — 内联 `CLAUDE.md` 编辑器 + `AGENTS.md` 预览
   - **Deploy** — 部署文件列表及内容（Dockerfile、docker-compose、vercel.json 等）
   - **Run** — `package.json` scripts 和 Makefile targets（有内容时才显示）
+  - **Lessons** — 来自 `session-log.md` 的踩坑记录，可与项目关联
+  - **Obs** — 单项目 LLM 调用指标（成本、延迟、错误率、最近调用记录）
 - 左侧边栏：文件数、依赖数、`.env` 状态、健康度评分明细、技术栈、Git 快速操作
 - 顶部操作：在终端打开、在文件管理器打开、跳转 GitHub
+
+### LLM 可观测性监控（`/obs`）
+生产环境 Agent 应用的多服务监控面板。
+
+- **总览 Tab** — 所有配置服务的汇总卡片（总成本、调用量、平均延迟、错误率）；逐服务健康卡（在线 / 离线状态及关键指标）
+- **优化建议** — 规则引擎自动分析：错误率突增、高延迟、定价配置缺失、模型延迟对比、Token 效率异常
+- **告警 Tab** — 可配置告警规则（错误率 / 延迟 / 成本阈值，可指定服务范围）；告警历史存储在 `~/.quasar/obs-alerts.json`；提供 `POST /api/obs/poll` 端点供外部 cron 触发
+- **服务配置 Tab** — 添加 / 删除 / 启用 / 禁用被监控的服务地址
+
+每个被监控服务只需暴露 `GET /obs/stats` HTTP 端点；Quasar 通过 HTTP 拉取数据，无需访问服务数据库。
+
+### 踩坑集（`/pitfalls`）
+- 来自 `session-log.md` 的踩坑记录集中管理
+- 支持与具体项目关联
+- 展开卡片查看问题描述、解法和教训
 
 ### 同步面板（`/sync`）
 - 所有有 Git 的 Skills 和 Projects 集中展示
@@ -51,6 +68,12 @@ QUASAR 是一个自托管的 Web 应用，为你的 AI 编程助手 Skills（技
 - 三种连线：源码关联 / CLAUDE.md 引用 / README 引用
 - 悬停高亮，点击查看连线详情
 
+### 鉴权
+- 可选密码登录，httpOnly Cookie 会话（有效期 7 天）
+- 基于 Web Crypto API 的 HMAC-SHA256 签名，无需外部鉴权依赖，兼容 Edge Runtime
+- 默认关闭（本地开发免配置）；在 `.env.local` 中设置 `QUASAR_PASSWORD` 后自动启用
+- 鉴权启用时侧边栏底部显示退出登录按钮
+
 ### 全局功能
 - `⌘K`（Mac）/ `Ctrl+K`（Windows/Linux）全文搜索——搜索名称、触发词、SKILL.md 内容、项目 README
 - 暗色 / 亮色 / 跟随系统主题，四种强调色，实时切换生效
@@ -62,10 +85,9 @@ QUASAR 是一个自托管的 Web 应用，为你的 AI 编程助手 Skills（技
 
 - **Node.js** 18+ 和 npm
 - **Git**（使用同步功能时需要）
+- **Python3**（可选——仅本地 SQLite obs 查询时需要）
 - Skills 目录：每个技能是一个包含 `SKILL.md` 的子目录
 - Projects 目录：普通代码项目目录（自动识别 README、package.json 等）
-
-> **Windows 用户**：核心功能（扫描、展示、Git 状态）完全支持。"在终端/文件管理器中打开"按钮在 Windows 下会调用 `cmd` 和 `explorer`，需要确保已安装 Git for Windows。
 
 ---
 
@@ -79,7 +101,11 @@ cd Quasar
 # 2. 安装依赖
 npm install
 
-# 3. 启动开发服务器
+# 3. 配置鉴权（可选）
+cp .env.example .env.local
+# 编辑 .env.local，设置 QUASAR_PASSWORD 和 QUASAR_SECRET
+
+# 4. 启动开发服务器
 npm run dev
 ```
 
@@ -100,6 +126,41 @@ npm run dev
 | **外观** | 暗色 / 亮色 / 跟随系统 |
 | **强调色** | 蓝 / 紫 / 青 / 琥珀 |
 | **自动扫描** | 文件变更时通过 `chokidar` 自动重新索引 |
+| **Obs 监控服务** | 暴露 `/obs/stats` 的远程服务地址，用于 LLM 监控 |
+| **告警规则** | 错误率、延迟、成本的阈值告警配置 |
+
+---
+
+## LLM 可观测性接入
+
+被监控服务需要暴露 obs HTTP 端点。在 FastAPI 服务中加入以下代码：
+
+```python
+# 在你的服务 main.py 中（用 try/except 保护，确保生产安全）
+try:
+    import sys, os
+    obs_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, obs_root)
+    import obs
+    from obs.router import router as obs_router
+    obs.init("your-service-name")
+    app.include_router(obs_router)
+except Exception:
+    pass
+```
+
+然后在 Quasar 的 **Obs → 服务配置** Tab 中添加服务地址。Quasar 会从每个配置的服务拉取 `GET /obs/stats` 并聚合数据——无需访问服务数据库。
+
+如需无人值守告警，配置 cron：
+```bash
+*/15 * * * * curl -s -X POST http://localhost:3000/api/obs/poll > /dev/null
+```
+
+---
+
+## 生产部署
+
+完整的步骤指南（PM2、Nginx、HTTPS、鉴权配置）参见 [`docs/deployment.md`](./docs/deployment.md)。
 
 ---
 
@@ -130,11 +191,8 @@ tags: [typescript, testing]
 触发词包括：关键词1、关键词2、关键词3等。
 
 # 详细说明
-
 技能的完整描述和使用说明……
 ```
-
-QUASAR 从 frontmatter 读取 `name`、`description`、`category`、`tags`，并从正文中匹配 `触发词：...` 或 `触发词包括：...` 格式的触发词。
 
 ### 项目目录结构
 
@@ -201,16 +259,23 @@ chmod +x launch-quasar.command
 | Git 集成 | simple-git |
 | 文件监听 | chokidar |
 | Frontmatter 解析 | gray-matter |
+| 鉴权 | Web Crypto API（HMAC-SHA256，内置，无依赖） |
+| Obs 数据 | HTTP fetch 各服务 `/obs/stats` 端点 |
 
-无数据库，无远程服务，所有数据存在本地文件系统。
+无外部数据库，无远程服务，所有配置和状态存在本地文件系统。
 
 ---
 
 ## Roadmap
 
+- [x] LLM 可观测性面板（成本、延迟、错误率）
+- [x] 多服务 HTTP 聚合
+- [x] 告警规则 + 历史
+- [x] 规则引擎优化建议
+- [x] 密码鉴权 + httpOnly Cookie
 - [ ] 技能相似度检测（TF-IDF / embedding）
 - [ ] 基于本地向量库的语义搜索
-- [ ] CLAUDE.md 可视化宪法编辑器
+- [ ] LLM 深度分析（Phase 3B）
 - [ ] Electron / Tauri 桌面端封装
 
 ---

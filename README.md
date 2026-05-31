@@ -2,9 +2,9 @@
 
 [English](./README.md) · [中文](./README.zh.md)
 
-**Local dashboard for managing AI Coding Agent skills and projects.**
+**Self-hosted dashboard for managing AI Coding Agent skills, projects, and LLM observability.**
 
-QUASAR is a self-hosted web app that gives you a unified view of all your AI agent skills and code projects — git status, health scores, deployment configs, usage history, and more. Think of it as TablePlus, but for your AI development assets.
+QUASAR is a self-hosted web app that gives you a unified view of all your AI agent skills and code projects — git status, health scores, deployment configs, usage history, LLM cost and latency monitoring, and more. Think of it as TablePlus, but for your AI development assets.
 
 Built for Claude Code users, but works with any agent that organises skills in a directory with `SKILL.md` files.
 
@@ -29,14 +29,31 @@ Built for Claude Code users, but works with any agent that organises skills in a
 
 ### Project Management (`/projects`)
 - Card grid with tech stack badges, health ring, git ahead/behind, config alerts
-- Detail page with five tabs:
+- Detail page with seven tabs:
   - **README** — rendered Markdown
   - **Git** — remote, branch, ahead/behind (local state, no network call), recent commits, push / pull / fetch
   - **Claude** — inline `CLAUDE.md` editor + `AGENTS.md` preview
   - **Deploy** — deploy file list and content (Dockerfile, docker-compose, vercel.json, etc.)
   - **Run** — `package.json` scripts and Makefile targets (shown only when present)
+  - **Lessons** — pitfall records sourced from `session-log.md`, linked per project
+  - **Obs** — per-project LLM call metrics (cost, latency, error rate, recent calls)
 - Sidebar: file count, dependency count, `.env` status, health score breakdown, tech stack, git quick actions
 - Header actions: open in Terminal, open in Finder, link to GitHub
+
+### LLM Observability (`/obs`)
+Multi-service monitoring panel for production Agent applications.
+
+- **Overview tab** — aggregated summary cards (total cost, calls, avg latency, error rate) across all configured services; per-service health cards showing online / offline status
+- **Optimization suggestions** — rule-based analysis: error rate spikes, high latency, missing pricing config, model latency comparison, token efficiency
+- **Alerts tab** — configurable alert rules (error rate / latency / cost thresholds per service); alert history stored in `~/.quasar/obs-alerts.json`; `POST /api/obs/poll` endpoint for external cron trigger
+- **Services tab** — add / remove / enable / disable monitored service endpoints
+
+Each monitored service exposes a `GET /obs/stats` HTTP endpoint; Quasar fetches data via HTTP, requiring no database access or agent modification.
+
+### Lessons / Pitfalls (`/pitfalls`)
+- Centralised pitfall library sourced from `session-log.md`
+- Link pitfalls to specific projects
+- Expandable cards showing problem, solution, and lessons learned
 
 ### Sync Panel (`/sync`)
 - All git-tracked skills and projects in one place
@@ -49,6 +66,12 @@ Built for Claude Code users, but works with any agent that organises skills in a
 - Three edge types: source-code link, CLAUDE.md mention, README mention
 - Hover to highlight, click to view edge details
 
+### Authentication
+- Optional password login with httpOnly cookie session (7-day TTL)
+- HMAC-SHA256 signed tokens — no external auth dependencies, edge-runtime compatible
+- Disabled by default (local dev); enabled by setting `QUASAR_PASSWORD` in `.env.local`
+- Logout button in sidebar when auth is active
+
 ### Global
 - `⌘K` full-text search — names, trigger words, SKILL.md content, project README
 - Dark / light / system theme with four accent colours, live-applied
@@ -60,6 +83,7 @@ Built for Claude Code users, but works with any agent that organises skills in a
 
 - **Node.js** 18+ and npm
 - **Git** (for sync features)
+- **Python3** (optional — only needed for local SQLite obs queries)
 - Skills structured as directories, each containing a `SKILL.md` file
 - Projects as plain directories (README, package.json, etc. detected automatically)
 
@@ -75,7 +99,11 @@ cd Quasar
 # 2. Install dependencies
 npm install
 
-# 3. Start the development server
+# 3. (Optional) Configure auth
+cp .env.example .env.local
+# Edit .env.local and set QUASAR_PASSWORD + QUASAR_SECRET
+
+# 4. Start the development server
 npm run dev
 ```
 
@@ -96,6 +124,41 @@ All config is stored in `~/.quasar/config.json` and managed through the Settings
 | **Appearance** | `dark` / `light` / `system` |
 | **Accent colour** | Blue / Purple / Teal / Amber |
 | **Auto-scan** | Re-index on file changes via `chokidar` |
+| **Obs services** | Remote service URLs exposing `/obs/stats` for LLM monitoring |
+| **Alert rules** | Thresholds for error rate, latency, and cost alerts |
+
+---
+
+## LLM Observability Setup
+
+To monitor an Agent service, it needs to expose the obs HTTP endpoint. Add the following to your FastAPI app:
+
+```python
+# In your service's main.py (wrapped in try/except for production safety)
+try:
+    import sys, os
+    obs_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, obs_root)
+    import obs
+    from obs.router import router as obs_router
+    obs.init("your-service-name")
+    app.include_router(obs_router)
+except Exception:
+    pass
+```
+
+Then add the service URL in Quasar's **Obs → Services** tab. Quasar fetches `GET /obs/stats` from each configured service and aggregates the data — no database access required.
+
+For unattended alerting, add a cron job:
+```bash
+*/15 * * * * curl -s -X POST http://localhost:3000/api/obs/poll > /dev/null
+```
+
+---
+
+## Production Deployment
+
+See [`docs/deployment.md`](./docs/deployment.md) for the full step-by-step guide covering PM2, Nginx, HTTPS, and auth setup.
 
 ---
 
@@ -129,8 +192,6 @@ tags: [typescript, testing]
 
 Full description and instructions follow...
 ```
-
-QUASAR reads `name`, `description`, `category`, and `tags` from frontmatter. Trigger words are parsed from lines matching `触发词：...` or `触发词包括：...` in the body.
 
 ### Projects
 
@@ -190,16 +251,23 @@ chmod +x launch-quasar.command
 | Git integration | simple-git |
 | File watching | chokidar |
 | Frontmatter parsing | gray-matter |
+| Auth | Web Crypto API (HMAC-SHA256, built-in) |
+| Obs data | HTTP fetch from service `/obs/stats` endpoints |
 
-No database. No remote services. All data lives on your local filesystem.
+No external database. No remote services. All config and state live on your local filesystem.
 
 ---
 
 ## Roadmap
 
+- [x] LLM observability panel (cost, latency, error rate)
+- [x] Multi-service HTTP aggregation
+- [x] Alert rules + history
+- [x] Rule-based optimization suggestions
+- [x] Password auth with httpOnly cookie
 - [ ] Skill similarity detection (TF-IDF or embedding-based)
 - [ ] Semantic search via local vector store
-- [ ] CLAUDE.md visual constitution editor
+- [ ] LLM-powered deep analysis (Phase 3B)
 - [ ] Electron / Tauri desktop wrapper
 
 ---
