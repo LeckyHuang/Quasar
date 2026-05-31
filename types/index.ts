@@ -39,6 +39,37 @@ export interface ProjectMeta {
   sourceDir: string
 }
 
+export interface ObsService {
+  id: string
+  name: string
+  baseUrl: string
+  enabled: boolean
+  authToken?: string
+}
+
+export interface AlertRule {
+  id: string
+  name: string
+  metric: 'error_rate' | 'avg_latency_ms' | 'total_cost_cny'
+  operator: '>' | '>='
+  threshold: number
+  serviceIds: string[]
+  enabled: boolean
+  cooldownMs: number
+}
+
+export interface AlertEvent {
+  id: string
+  ts: number
+  ruleId: string
+  ruleName: string
+  serviceId: string
+  serviceName: string
+  metric: string
+  value: number
+  threshold: number
+}
+
 export interface QuasarConfig {
   skillsDirs: string[]
   projectsDirs: string[]
@@ -46,6 +77,8 @@ export interface QuasarConfig {
   accent?: string
   autoScan: boolean
   scanIntervalMs: number
+  obsServices: ObsService[]
+  alertRules: AlertRule[]
 }
 
 export interface CacheData {

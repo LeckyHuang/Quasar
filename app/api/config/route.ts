@@ -7,7 +7,8 @@ import { invalidateCache } from '@/lib/cache'
 export async function GET() {
   const config = readConfig()
   const firstRun = isFirstRun()
-  return NextResponse.json({ config, firstRun })
+  const authEnabled = !!process.env.QUASAR_PASSWORD
+  return NextResponse.json({ config, firstRun, authEnabled })
 }
 
 export async function PUT(req: NextRequest) {

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Sparkles, Folder, RefreshCw, Settings,
-  Search, ChevronLeft, Zap, GitFork, AlertTriangle,
+  Search, ChevronLeft, Zap, GitFork, AlertTriangle, Activity, LogOut,
 } from 'lucide-react';
 
 interface NavItemProps {
@@ -38,9 +38,10 @@ interface SidebarProps {
   skillCount?: number;
   projectCount?: number;
   syncAlerts?: number;
+  onLogout?: () => void;
 }
 
-export default function Sidebar({ collapsed, onToggleCollapse, onOpenCmdK, skillCount, projectCount, syncAlerts }: SidebarProps) {
+export default function Sidebar({ collapsed, onToggleCollapse, onOpenCmdK, skillCount, projectCount, syncAlerts, onLogout }: SidebarProps) {
   const pathname = usePathname();
 
   const isActive = (base: string) => {
@@ -73,6 +74,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCmdK, skill
         <NavItem href="/sync" icon={<RefreshCw size={16} />} label="Sync" cn="同步" badge={syncAlerts} active={isActive('/sync')} />
         <NavItem href="/graph" icon={<GitFork size={16} />} label="Graph" cn="关联图" active={isActive('/graph')} />
         <NavItem href="/pitfalls" icon={<AlertTriangle size={16} />} label="Lessons" cn="教训集" active={isActive('/pitfalls')} />
+        <NavItem href="/obs" icon={<Activity size={16} />} label="Obs" cn="可观测性" active={isActive('/obs')} />
         <NavItem href="/settings" icon={<Settings size={16} />} label="Settings" cn="设置" active={isActive('/settings')} />
       </div>
 
@@ -102,12 +104,18 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCmdK, skill
           <ChevronLeft size={14} style={{ transform: collapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flex: 'none' }} />
           <span className="nav__footer-text">{collapsed ? 'Expand · 展开' : 'Collapse · 收起'}</span>
         </button>
-        <div className="nav__user">
+        <div className="nav__user" style={{ display: 'flex', alignItems: 'center' }}>
           <div className="nav__user-avatar">Q</div>
-          <div className="nav__footer-text" style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <div className="nav__footer-text" style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
             <span style={{ fontSize: 12, color: 'var(--tx-1)', fontWeight: 500 }}>QUASAR</span>
             <span style={{ fontSize: 10.5, color: 'var(--tx-3)' }}>Local mode · 本地模式</span>
           </div>
+          {onLogout && (
+            <button onClick={onLogout} title="退出登录"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-3)', padding: 4, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+              <LogOut size={13} />
+            </button>
+          )}
         </div>
       </div>
     </aside>

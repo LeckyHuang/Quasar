@@ -62,6 +62,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [cmdkOpen, setCmdkOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [authEnabled, setAuthEnabled] = useState(false);
+  const router = useRouter();
 
   const openCmdK = useCallback(() => setCmdkOpen(true), []);
   const closeCmdK = useCallback(() => setCmdkOpen(false), []);
@@ -69,14 +71,24 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Load theme from config on mount, detect firstRun
   useEffect(() => {
     fetch('/api/config')
-      .then(r => r.json())
+      .then(r => {
+        if (r.status === 401) { router.replace('/login'); return null; }
+        return r.json();
+      })
       .then(data => {
+        if (!data) return;
         const cfg = data.config ?? data;
         applyTheme(cfg.appearance ?? 'dark', cfg.accent ?? 'blue');
         if (data.firstRun) setShowWelcome(true);
+        setAuthEnabled(!!data.authEnabled);
       })
       .catch(() => {});
-  }, []);
+  }, [router]);
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.replace('/login');
+  };
 
   // Listen for theme changes from settings page
   useEffect(() => {
@@ -105,6 +117,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         collapsed={collapsed}
         onToggleCollapse={() => setCollapsed(v => !v)}
         onOpenCmdK={openCmdK}
+        onLogout={authEnabled ? handleLogout : undefined}
       />
       <div className="content">
         {children}

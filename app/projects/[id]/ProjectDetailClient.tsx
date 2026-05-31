@@ -16,6 +16,183 @@ interface Pitfall {
   linkedSkills: string[];
 }
 
+/* ─── ObsTab — LLM 可观测性数据 ─── */
+interface ObsSummary {
+  total_calls: number; error_count: number; error_rate: number;
+  avg_latency_ms: number; total_cost_cny: number; total_tokens: number; period_days: number;
+}
+interface ObsCall {
+  id: number; ts: number; project: string; operation: string; model: string;
+  provider: string; input_tokens: number | null; output_tokens: number | null;
+  latency_ms: number; cost_cny: number | null; status: string;
+}
+interface ObsError {
+  id: number; ts: number; project: string; operation: string;
+  model: string; error_msg: string; latency_ms: number;
+}
+interface ObsData {
+  summary: ObsSummary;
+  recent_calls: ObsCall[];
+  recent_errors: ObsError[];
+}
+
+function fmtLatency(ms: number | null) {
+  if (ms == null) return '—';
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
+}
+function fmtCost(v: number | null) {
+  if (v == null) return '—';
+  return v < 0.001 ? '<¥0.001' : `¥${v.toFixed(v < 1 ? 3 : 2)}`;
+}
+function fmtTs(ts: number) {
+  const d = new Date(ts * 1000);
+  return `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+function fmtTokens(v: number | null) {
+  if (v == null) return '—';
+  return v >= 1000 ? `${(v/1000).toFixed(1)}K` : String(v);
+}
+
+function ObsTab({ projectName }: { projectName: string }) {
+  const [data, setData] = React.useState<ObsData | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [days, setDays] = React.useState(7);
+
+  const load = React.useCallback(async (d: number) => {
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch(`/api/obs?project=${encodeURIComponent(projectName)}&days=${d}`);
+      const json = await res.json();
+      if (json.error) { setError(json.error); setData(null); }
+      else setData(json);
+    } catch (e) {
+      setError(String(e));
+    } finally { setLoading(false); }
+  }, [projectName]);
+
+  useEffect(() => { load(days); }, [load, days]);
+
+  const s = data?.summary;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* 顶部控制 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 12, color: 'var(--tx-3)' }}>周期</span>
+        {[7, 14, 30].map(d => (
+          <button key={d}
+            className={`btn btn--sm${days === d ? ' btn--active' : ''}`}
+            style={days === d ? { background: 'var(--ac-1)', color: '#fff' } : {}}
+            onClick={() => { setDays(d); load(d); }}>
+            {d}d
+          </button>
+        ))}
+        <button className="btn btn--sm" style={{ marginLeft: 'auto' }} onClick={() => load(days)}>↻ 刷新</button>
+      </div>
+
+      {loading && <div style={{ color: 'var(--tx-3)', fontSize: 13 }}><Spinner /> 加载中…</div>}
+      {error && <div style={{ color: '#ef4444', fontSize: 12, fontFamily: 'monospace' }}>❌ {error}</div>}
+
+      {!loading && !error && s && (
+        <>
+          {s.total_calls === 0 ? (
+            <div style={{ color: 'var(--tx-3)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>
+              暂无 LLM 调用记录<br />
+              <span style={{ fontSize: 11 }}>obs 项目名需与 obs.init() 中传入的名称一致（当前：{projectName}）</span>
+            </div>
+          ) : (
+            <>
+              {/* 指标卡片 */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                {[
+                  { label: '总成本', value: fmtCost(s.total_cost_cny), color: '#10b981' },
+                  { label: '平均响应', value: fmtLatency(s.avg_latency_ms), color: '#f59e0b' },
+                  { label: '错误率', value: `${(s.error_rate * 100).toFixed(1)}%`, color: s.error_rate > 0.05 ? '#ef4444' : 'var(--tx-1)' },
+                  { label: '调用总量', value: s.total_calls.toLocaleString(), color: '#3b82f6' },
+                ].map(card => (
+                  <div key={card.label} className="subcard" style={{ padding: '12px 14px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: 'var(--tx-3)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{card.label}</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'monospace', color: card.color }}>{card.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* 最近错误 */}
+              {data!.recent_errors.length > 0 && (
+                <div className="subcard">
+                  <div className="subcard__hd">
+                    <h3 className="subcard__title" style={{ color: '#ef4444' }}>⚠ 最近异常 · {data!.recent_errors.length} 条</h3>
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--br-1)' }}>
+                          {['时间', '操作', '模型', '错误', '耗时'].map(h => (
+                            <th key={h} style={{ padding: '6px 10px', textAlign: 'left', color: 'var(--tx-3)', fontWeight: 500, fontSize: 11 }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data!.recent_errors.map(e => (
+                          <tr key={e.id} style={{ borderBottom: '1px solid var(--br-1)' }}>
+                            <td style={{ padding: '6px 10px', fontFamily: 'monospace', color: 'var(--tx-3)', whiteSpace: 'nowrap' }}>{fmtTs(e.ts)}</td>
+                            <td style={{ padding: '6px 10px', color: 'var(--tx-2)' }}>{e.operation || '—'}</td>
+                            <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontSize: 11 }}>{e.model || '—'}</td>
+                            <td style={{ padding: '6px 10px', color: '#ef4444', fontFamily: 'monospace', fontSize: 11, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.error_msg || '—'}</td>
+                            <td style={{ padding: '6px 10px', fontFamily: 'monospace', color: 'var(--tx-3)' }}>{fmtLatency(e.latency_ms)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* 最近调用 */}
+              <div className="subcard">
+                <div className="subcard__hd">
+                  <h3 className="subcard__title">最近调用 · {data!.recent_calls.length} 条</h3>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--br-1)' }}>
+                        {['时间', '操作', '模型', 'Tokens', '耗时', '成本', '状态'].map(h => (
+                          <th key={h} style={{ padding: '6px 10px', textAlign: 'left', color: 'var(--tx-3)', fontWeight: 500, fontSize: 11 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data!.recent_calls.map(c => (
+                        <tr key={c.id} style={{ borderBottom: '1px solid var(--br-1)', opacity: c.status === 'error' ? 0.8 : 1 }}>
+                          <td style={{ padding: '6px 10px', fontFamily: 'monospace', color: 'var(--tx-3)', whiteSpace: 'nowrap', fontSize: 11 }}>{fmtTs(c.ts)}</td>
+                          <td style={{ padding: '6px 10px', color: 'var(--tx-2)', fontSize: 11 }}>{c.operation || '—'}</td>
+                          <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontSize: 11 }}>{c.model || '—'}</td>
+                          <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontSize: 11, color: 'var(--tx-3)' }}>{fmtTokens(c.input_tokens)}/{fmtTokens(c.output_tokens)}</td>
+                          <td style={{ padding: '6px 10px', fontFamily: 'monospace', color: 'var(--tx-3)' }}>{fmtLatency(c.latency_ms)}</td>
+                          <td style={{ padding: '6px 10px', fontFamily: 'monospace', color: '#10b981' }}>{fmtCost(c.cost_cny)}</td>
+                          <td style={{ padding: '6px 10px' }}>
+                            <span style={{ display: 'inline-block', padding: '1px 8px', borderRadius: 20, fontSize: 10, fontWeight: 600, fontFamily: 'monospace',
+                              background: c.status === 'ok' ? 'rgba(16,185,129,.15)' : 'rgba(239,68,68,.15)',
+                              color: c.status === 'ok' ? '#10b981' : '#ef4444' }}>
+                              {c.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ─── PostmortemTab — session-log sourced pitfalls ─── */
 function PostmortemTab({ projectId }: { projectId: string }) {
   const [linked, setLinked] = useState<Pitfall[]>([]);
@@ -265,6 +442,7 @@ export default function ProjectDetailClient({
     { id: 'deploy', label: 'Deploy', cn: '部署' },
     ...(hasRunCommands ? [{ id: 'run', label: 'Run', cn: '命令' }] : []),
     { id: 'postmortem', label: 'Lessons', cn: '教训' },
+    { id: 'obs', label: 'Obs', cn: '监控' },
   ];
 
   const healthItems = [
@@ -571,6 +749,7 @@ export default function ProjectDetailClient({
             )}
 
             {tab === 'postmortem' && <PostmortemTab projectId={project.id} />}
+            {tab === 'obs' && <ObsTab projectName={project.path.split('/').pop() || project.name} />}
           </div>
         </div>
       </div>
