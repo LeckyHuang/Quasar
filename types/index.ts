@@ -50,7 +50,7 @@ export interface ObsService {
 export interface AlertRule {
   id: string
   name: string
-  metric: 'error_rate' | 'avg_latency_ms' | 'total_cost_cny'
+  metric: 'error_rate' | 'avg_latency_ms' | 'total_cost_cny' | 'asr_cost_cny' | 'daily_calls' | 'auth_error_count' | 'rate_limit_count'
   operator: '>' | '>='
   threshold: number
   serviceIds: string[]
@@ -70,6 +70,15 @@ export interface AlertEvent {
   threshold: number
 }
 
+export interface PricingEntry {
+  id: string
+  type: 'llm' | 'asr'
+  provider: string
+  model: string       // LLM: 模型名；ASR: 服务标识（如 "doubao-asr-bigmodel"）
+  inputPer1k: number  // LLM: 输入 token ¥/1K；ASR: ¥/分钟
+  outputPer1k: number // LLM: 输出 token ¥/1K；ASR: 无意义填 0
+}
+
 export interface QuasarConfig {
   skillsDirs: string[]
   projectsDirs: string[]
@@ -79,6 +88,7 @@ export interface QuasarConfig {
   scanIntervalMs: number
   obsServices: ObsService[]
   alertRules: AlertRule[]
+  pricing: PricingEntry[]
 }
 
 export interface CacheData {

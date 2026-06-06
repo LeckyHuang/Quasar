@@ -6,6 +6,7 @@ import { Badge, Spinner, Bi } from '@/components/ui';
 import type { ObsService, AlertRule, AlertEvent } from '@/types';
 import { generateSuggestions } from '@/lib/obsSuggestions';
 import type { Suggestion } from '@/lib/obsSuggestions';
+import { TraceWaterfall } from '@/components/TraceWaterfall';
 
 /* ─── helpers ─── */
 function fmtCost(v: number | null) {
@@ -33,9 +34,19 @@ interface ServiceResult {
   };
   error?: string;
 }
+interface ModelRow {
+  model: string; provider: string; service: string;
+  calls: number; total_tokens: number; cost_cny: number; avg_latency_ms: number | null;
+}
+interface AggregateTrace {
+  trace_id: string; start_ts: number; total_latency_ms: number; status: string
+  spans: unknown[]; serviceName: string; serviceId: string
+}
 interface AggregateData {
-  summary: { total_calls: number; error_count: number; error_rate: number; avg_latency_ms: number; total_cost_cny: number; total_tokens: number } | null;
+  summary: { total_calls: number; error_count: number; error_rate: number; avg_latency_ms: number; total_cost_cny: number; total_tokens: number; latency_p50?: number | null; latency_p95?: number | null; latency_p99?: number | null; auth_error_count?: number; rate_limit_count?: number } | null;
   services: ServiceResult[];
+  by_model: ModelRow[];
+  traces: AggregateTrace[];
   alerts: AlertEvent[];
   days: number;
 }
@@ -45,11 +56,19 @@ const METRIC_LABELS: Record<string, string> = {
   error_rate: '错误率',
   avg_latency_ms: '平均延迟 (ms)',
   total_cost_cny: '总成本 (¥)',
+  asr_cost_cny: 'ASR 成本 (¥)',
+  daily_calls: '日调用量 (次)',
+  auth_error_count: 'Auth 失败次数',
+  rate_limit_count: '限流触发次数',
 };
 const METRIC_DEFAULTS: Record<string, number> = {
   error_rate: 0.1,
   avg_latency_ms: 30000,
   total_cost_cny: 10,
+  asr_cost_cny: 5,
+  daily_calls: 200,
+  auth_error_count: 3,
+  rate_limit_count: 5,
 };
 
 /* ─── Sub-components ─── */
@@ -171,7 +190,7 @@ function AlertRulesPanel({ rules, services, onChange }: {
 
 /* ─── Main page ─── */
 export default function ObsPage() {
-  const [tab, setTab] = useState<'overview' | 'alerts' | 'services'>('overview');
+  const [tab, setTab] = useState<'overview' | 'alerts' | 'services' | 'traces'>('overview');
   const [days, setDays] = useState(7);
   const [data, setData] = useState<AggregateData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -187,6 +206,7 @@ export default function ObsPage() {
   // new service form
   const [newName, setNewName] = useState('');
   const [newUrl, setNewUrl] = useState('');
+  const [newToken, setNewToken] = useState('');
 
   // load config
   useEffect(() => {
@@ -212,10 +232,16 @@ export default function ObsPage() {
 
   const addService = () => {
     if (!newUrl.trim()) return;
-    const svc: ObsService = { id: uid(), name: newName.trim() || newUrl.trim(), baseUrl: newUrl.trim(), enabled: true };
+    const svc: ObsService = { id: uid(), name: newName.trim() || newUrl.trim(), baseUrl: newUrl.trim(), enabled: true, authToken: newToken.trim() || undefined };
     const next = [...services, svc];
     setServices(next);
-    setNewName(''); setNewUrl('');
+    setNewName(''); setNewUrl(''); setNewToken('');
+    saveConfig(next, rules);
+  };
+
+  const updateToken = (id: string, token: string) => {
+    const next = services.map(s => s.id === id ? { ...s, authToken: token.trim() || undefined } : s);
+    setServices(next);
     saveConfig(next, rules);
   };
 
@@ -286,6 +312,7 @@ export default function ObsPage() {
       <div className="tabs">
         {([
           { id: 'overview', label: 'Overview', cn: '总览' },
+          { id: 'traces', label: `Traces${(data?.traces ?? []).length > 0 ? ` (${(data?.traces ?? []).length})` : ''}`, cn: '链路' },
           { id: 'alerts', label: `Alerts${alertCount > 0 ? ` (${alertCount})` : ''}`, cn: '告警' },
           { id: 'services', label: 'Services', cn: '服务配置' },
         ] as Array<{ id: typeof tab; label: string; cn: string }>).map(t => (
@@ -321,18 +348,67 @@ export default function ObsPage() {
               )}
 
               {s && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-                  <MetricCard label="总成本" value={fmtCost(s.total_cost_cny)} color="#10b981" />
-                  <MetricCard label="总调用" value={s.total_calls.toLocaleString()} color="#3b82f6" />
-                  <MetricCard label="平均延迟" value={fmtLatency(s.avg_latency_ms)} color="#f59e0b" />
-                  <MetricCard label="错误率" value={`${(s.error_rate * 100).toFixed(1)}%`} color={s.error_rate > 0.05 ? '#ef4444' : 'var(--tx-1)'} />
-                </div>
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                    <MetricCard label="总成本" value={fmtCost(s.total_cost_cny)} color="#10b981" />
+                    <MetricCard label="总调用" value={s.total_calls.toLocaleString()} color="#3b82f6" />
+                    <MetricCard label={
+                      s.latency_p95 != null
+                        ? `平均延迟  P95:${(s.latency_p95/1000).toFixed(1)}s  P99:${s.latency_p99 != null ? (s.latency_p99/1000).toFixed(1)+'s' : '—'}`
+                        : '平均延迟'
+                    } value={fmtLatency(s.avg_latency_ms)} color="#f59e0b" />
+                    <MetricCard label="错误率" value={`${(s.error_rate * 100).toFixed(1)}%`} color={s.error_rate > 0.05 ? '#ef4444' : 'var(--tx-1)'} />
+                  </div>
+                  {((s.auth_error_count ?? 0) > 0 || (s.rate_limit_count ?? 0) > 0) && (
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.06em', alignSelf: 'center', whiteSpace: 'nowrap' }}>安全事件</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, flex: 1 }}>
+                        <MetricCard label="Auth 失败" value={String(s.auth_error_count ?? 0)} color={(s.auth_error_count ?? 0) > 0 ? '#ef4444' : 'var(--tx-3)'} />
+                        <MetricCard label="限流触发" value={String(s.rate_limit_count ?? 0)} color={(s.rate_limit_count ?? 0) > 3 ? '#f59e0b' : 'var(--tx-3)'} />
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               {(data?.services ?? []).length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>服务状态</div>
                   {(data?.services ?? []).map(svc => <ServiceCard key={svc.id} svc={svc} />)}
+                </div>
+              )}
+
+              {/* 模型明细 */}
+              {(data?.by_model ?? []).length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>模型明细</div>
+                  <div className="subcard" style={{ padding: 0, overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--hl-2)' }}>
+                          {['模型', '服务', '调用', 'Token', '成本', '平均延迟'].map(h => (
+                            <th key={h} style={{ padding: '10px 14px', textAlign: h === '模型' || h === '服务' ? 'left' : 'right', color: 'var(--tx-3)', fontWeight: 500, fontSize: 11 }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(data?.by_model ?? []).map((m, i) => (
+                          <tr key={i} style={{ borderBottom: '1px solid var(--hl-1)' }}>
+                            <td style={{ padding: '9px 14px', color: 'var(--tx-1)', fontFamily: 'monospace', fontSize: 12 }}>{m.model}</td>
+                            <td style={{ padding: '9px 14px', color: 'var(--tx-3)' }}>{m.service}</td>
+                            <td style={{ padding: '9px 14px', textAlign: 'right', color: 'var(--ac-1)', fontWeight: 600 }}>{m.calls}</td>
+                            <td style={{ padding: '9px 14px', textAlign: 'right', color: 'var(--tx-2)' }}>{m.total_tokens.toLocaleString()}</td>
+                            <td style={{ padding: '9px 14px', textAlign: 'right', color: m.cost_cny > 0 ? 'var(--warn)' : 'var(--tx-3)', fontFamily: 'monospace' }}>
+                              {m.cost_cny > 0 ? `¥${m.cost_cny.toFixed(4)}` : '—'}
+                            </td>
+                            <td style={{ padding: '9px 14px', textAlign: 'right', color: m.avg_latency_ms && m.avg_latency_ms > 30000 ? 'var(--warn)' : 'var(--tx-2)', fontFamily: 'monospace' }}>
+                              {m.avg_latency_ms ? `${(m.avg_latency_ms / 1000).toFixed(1)}s` : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
 
@@ -406,6 +482,7 @@ export default function ObsPage() {
                           <td style={{ padding: '6px 10px', fontFamily: 'monospace', color: '#ef4444', fontWeight: 700 }}>
                             {ev.metric === 'error_rate' ? `${(ev.value * 100).toFixed(1)}%`
                               : ev.metric === 'avg_latency_ms' ? fmtLatency(ev.value)
+                              : (ev.metric === 'auth_error_count' || ev.metric === 'rate_limit_count' || ev.metric === 'daily_calls') ? `${ev.value} 次`
                               : fmtCost(ev.value)}
                           </td>
                           <td style={{ padding: '6px 10px', fontFamily: 'monospace', color: 'var(--tx-3)' }}>
@@ -422,6 +499,25 @@ export default function ObsPage() {
             </div>
           )}
 
+          {tab === 'traces' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {(data?.services ?? []).filter(s => s.status === 'ok').map(svc => {
+                const svcTraces = (data?.traces ?? []).filter(t => t.serviceId === svc.id)
+                return (
+                  <div key={svc.id} className="subcard" style={{ padding: 0, overflow: 'hidden' }}>
+                    <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--hl-2)', fontSize: 12, fontWeight: 600, color: 'var(--tx-2)' }}>
+                      {svc.name}
+                    </div>
+                    <TraceWaterfall traces={svcTraces as never} serviceName={svc.name} />
+                  </div>
+                )
+              })}
+              {(data?.services ?? []).filter(s => s.status === 'ok').length === 0 && (
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--tx-3)', fontSize: 13 }}>暂无在线服务</div>
+              )}
+            </div>
+          )}
+
           {tab === 'services' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div className="subcard">
@@ -430,11 +526,14 @@ export default function ObsPage() {
                 </div>
 
                 {/* Add service */}
-                <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                  <input className="input" style={{ width: 160 }} placeholder="服务名称（可选）"
+                <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                  <input className="input" style={{ width: 140 }} placeholder="服务名称（可选）"
                     value={newName} onChange={e => setNewName(e.target.value)} />
-                  <input className="input" style={{ flex: 1 }} placeholder="Base URL，如 http://server:8000"
+                  <input className="input" style={{ flex: 2, minWidth: 180 }} placeholder="Base URL，如 http://server:8000"
                     value={newUrl} onChange={e => setNewUrl(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') addService(); }} />
+                  <input className="input" style={{ flex: 1, minWidth: 140 }} placeholder="Auth Token（可选）"
+                    value={newToken} onChange={e => setNewToken(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') addService(); }} />
                   <button className="btn" onClick={addService}><Plus size={13} /> 添加服务</button>
                 </div>
@@ -461,8 +560,15 @@ export default function ObsPage() {
                             transition: 'left 0.15s', display: 'block',
                           }} />
                         </button>
-                        <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx-1)' }}>{svc.name}</span>
-                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--tx-3)', flex: 1 }}>{svc.baseUrl}</span>
+                        <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx-1)', whiteSpace: 'nowrap' }}>{svc.name}</span>
+                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--tx-3)' }}>{svc.baseUrl}</span>
+                        <input
+                          className="input"
+                          style={{ flex: 1, minWidth: 120, fontSize: 12, padding: '3px 8px', fontFamily: 'monospace' }}
+                          placeholder="Auth Token"
+                          defaultValue={svc.authToken ?? ''}
+                          onBlur={e => updateToken(svc.id, e.target.value)}
+                        />
                         <button className="btn btn--sm" style={{ color: 'var(--bad)' }} onClick={() => removeService(svc.id)}>
                           <Trash2 size={12} />
                         </button>

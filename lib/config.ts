@@ -14,6 +14,7 @@ const DEFAULT_CONFIG: QuasarConfig = {
   scanIntervalMs: 300000,
   obsServices: [],
   alertRules: [],
+  pricing: [],
 }
 
 export function readConfig(): QuasarConfig {

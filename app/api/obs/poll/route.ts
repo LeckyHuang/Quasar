@@ -22,6 +22,10 @@ export async function POST(req: NextRequest) {
       const res = await fetch(url, { signal: controller.signal, headers, cache: 'no-store' })
       if (!res.ok) return null
       const data = await res.json()
+      const asrCost = (data.asr_stats ?? []).reduce(
+        (sum: number, a: { cost_cny?: number | null }) => sum + (a.cost_cny ?? 0), 0
+      )
+      const eb: Record<string, number> = data.error_breakdown ?? {}
       return {
         id: svc.id,
         name: svc.name,
@@ -29,6 +33,10 @@ export async function POST(req: NextRequest) {
           error_rate: data.summary?.error_rate ?? 0,
           avg_latency_ms: data.summary?.avg_latency_ms ?? 0,
           total_cost_cny: data.summary?.total_cost_cny ?? 0,
+          asr_cost_cny: asrCost,
+          daily_calls: data.summary?.total_calls ?? 0,
+          auth_error_count: eb.auth ?? 0,
+          rate_limit_count: (eb.rate_limit ?? 0) + (eb.rate_limit_hit ?? 0),
         },
       }
     } catch {

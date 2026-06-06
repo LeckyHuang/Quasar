@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Plus, RefreshCw, Trash2, GripVertical } from 'lucide-react';
-import type { QuasarConfig } from '@/types';
+import type { QuasarConfig, PricingEntry } from '@/types';
 import { Toggle, Segmented, Badge, Bi } from '@/components/ui';
 
 function SettingRow({ label, sub, children }: { label: React.ReactNode; sub?: string; children: React.ReactNode }) {
@@ -31,6 +31,223 @@ const ACCENTS = [
   { id: 'teal',   color: '#2DD4BF', label: 'Teal 青绿' },
   { id: 'amber',  color: '#F59E0B', label: 'Amber 暖橙' },
 ];
+
+const EMPTY_ENTRY: Omit<PricingEntry, 'id'> = { type: 'llm', provider: '', model: '', inputPer1k: 0, outputPer1k: 0 }
+
+// crypto.randomUUID() 仅在安全上下文（HTTPS/localhost）可用，
+// 服务器经 http://IP 访问时为 undefined，故用 Math.random 兜底
+function genId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
+}
+
+function NumInput({ value, onCommit }: { value: number; onCommit: (n: number) => void }) {
+  const [local, setLocal] = useState(value === 0 ? '' : String(value))
+
+  useEffect(() => {
+    setLocal(value === 0 ? '' : String(value))
+  }, [value])
+
+  return (
+    <input
+      type="text" inputMode="decimal"
+      className="input" style={{ width: 96, textAlign: 'right', fontSize: 12 }}
+      value={local}
+      placeholder="0"
+      onChange={e => {
+        const v = e.target.value
+        if (/^(\d+\.?\d*|\.\d*)$/.test(v) || v === '') setLocal(v)
+      }}
+      onBlur={() => {
+        const n = parseFloat(local)
+        const committed = isNaN(n) ? 0 : n
+        onCommit(committed)
+        setLocal(committed === 0 ? '' : String(committed))
+      }}
+    />
+  )
+}
+
+function PricingTable({ entries, onChange }: { entries: PricingEntry[]; onChange: (e: PricingEntry[]) => void }) {
+  const [draft, setDraft] = useState<Omit<PricingEntry, 'id'>>(EMPTY_ENTRY)
+
+  const update = (id: string, field: keyof PricingEntry, val: string | number) => {
+    onChange(entries.map(e => e.id === id ? { ...e, [field]: val } : e))
+  }
+
+  const remove = (id: string) => onChange(entries.filter(e => e.id !== id))
+
+  const add = () => {
+    if (!draft.provider.trim() || !draft.model.trim()) return
+    onChange([...entries, { ...draft, id: genId() }])
+    setDraft(EMPTY_ENTRY)
+  }
+
+  const thStyle: React.CSSProperties = { fontSize: 10, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.06em', padding: '6px 8px', fontWeight: 500, textAlign: 'left', borderBottom: '1px solid var(--hl-2)', whiteSpace: 'nowrap' }
+  const tdStyle: React.CSSProperties = { padding: '5px 8px', fontSize: 12, verticalAlign: 'middle' }
+
+  const PriceCell = ({ type, val, onChangeVal }: { type: 'llm' | 'asr'; val: number; onChangeVal: (n: number) => void }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+      <NumInput value={val} onCommit={onChangeVal} />
+      <span style={{ fontSize: 10, color: 'var(--tx-3)', whiteSpace: 'nowrap' }}>
+        {type === 'asr' ? '¥/min' : '¥/1K'}
+      </span>
+    </div>
+  )
+
+  return (
+    <div className="subcard" style={{ marginBottom: 16 }}>
+      <div className="subcard__hd">
+        <div>
+          <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--tx-1)' }}>API 定价表</h3>
+          <div className="tx-3" style={{ fontSize: 11.5, marginTop: 2 }}>LLM: 输入/输出分别 ¥/千 tokens；ASR: 统一按 ¥/分钟计费</div>
+        </div>
+      </div>
+
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={thStyle}>类型</th>
+              <th style={thStyle}>服务商</th>
+              <th style={thStyle}>模型 / 标识</th>
+              <th style={{ ...thStyle, textAlign: 'right' }}>输入价格</th>
+              <th style={{ ...thStyle, textAlign: 'right' }}>输出价格</th>
+              <th style={{ ...thStyle, width: 32 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map(e => (
+              <tr key={e.id} style={{ borderBottom: '1px solid var(--hl-1)' }}>
+                <td style={tdStyle}>
+                  <select className="input" style={{ fontSize: 12, padding: '2px 6px', width: 68 }}
+                    value={e.type} onChange={v => update(e.id, 'type', v.target.value)}>
+                    <option value="llm">LLM</option>
+                    <option value="asr">ASR</option>
+                  </select>
+                </td>
+                <td style={tdStyle}>
+                  <input className="input" style={{ fontSize: 12, width: 100 }}
+                    value={e.provider} onChange={v => update(e.id, 'provider', v.target.value)} />
+                </td>
+                <td style={tdStyle}>
+                  <input className="input" style={{ fontSize: 12, width: 190, fontFamily: 'monospace' }}
+                    value={e.model} onChange={v => update(e.id, 'model', v.target.value)} />
+                </td>
+                <td style={{ ...tdStyle, textAlign: 'right' }}>
+                  <PriceCell type={e.type} val={e.inputPer1k} onChangeVal={n => update(e.id, 'inputPer1k', n)} />
+                </td>
+                <td style={{ ...tdStyle, textAlign: 'right' }}>
+                  {e.type === 'asr'
+                    ? <span style={{ color: 'var(--tx-3)', fontSize: 11, paddingRight: 8 }}>—</span>
+                    : <PriceCell type="llm" val={e.outputPer1k} onChangeVal={n => update(e.id, 'outputPer1k', n)} />}
+                </td>
+                <td style={{ ...tdStyle, textAlign: 'center' }}>
+                  <button className="icon-btn btn--danger" onClick={() => remove(e.id)}><Trash2 size={12} /></button>
+                </td>
+              </tr>
+            ))}
+
+            {/* 新增行 */}
+            <tr style={{ background: 'var(--bg-2)' }}>
+              <td style={tdStyle}>
+                <select className="input" style={{ fontSize: 12, padding: '2px 6px', width: 68 }}
+                  value={draft.type} onChange={e => setDraft(d => ({ ...d, type: e.target.value as 'llm' | 'asr' }))}>
+                  <option value="llm">LLM</option>
+                  <option value="asr">ASR</option>
+                </select>
+              </td>
+              <td style={tdStyle}>
+                <input className="input" style={{ fontSize: 12, width: 100 }}
+                  placeholder="moonshot"
+                  value={draft.provider} onChange={e => setDraft(d => ({ ...d, provider: e.target.value }))} />
+              </td>
+              <td style={tdStyle}>
+                <input className="input" style={{ fontSize: 12, width: 190, fontFamily: 'monospace' }}
+                  placeholder="moonshot-v1-128k"
+                  value={draft.model}
+                  onChange={e => setDraft(d => ({ ...d, model: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') add() }} />
+              </td>
+              <td style={{ ...tdStyle, textAlign: 'right' }}>
+                <PriceCell type={draft.type} val={draft.inputPer1k} onChangeVal={n => setDraft(d => ({ ...d, inputPer1k: n }))} />
+              </td>
+              <td style={{ ...tdStyle, textAlign: 'right' }}>
+                {draft.type === 'asr'
+                  ? <span style={{ color: 'var(--tx-3)', fontSize: 11, paddingRight: 8 }}>—</span>
+                  : <PriceCell type="llm" val={draft.outputPer1k} onChangeVal={n => setDraft(d => ({ ...d, outputPer1k: n }))} />}
+              </td>
+              <td style={{ ...tdStyle, textAlign: 'center' }}>
+                <button className="btn btn--sm" onClick={add}><Plus size={12} /></button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {entries.length === 0 && (
+        <div style={{ padding: '8px 16px 12px', color: 'var(--tx-3)', fontSize: 12 }}>
+          暂无定价记录 — 在最后一行填入模型信息后点击 + 添加
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ScanList({ title, sub, dirKey, dirs, newVal, setNewVal, onAdd, onRemove }: {
+  title: React.ReactNode; sub: string;
+  dirKey: 'skillsDirs' | 'projectsDirs';
+  dirs: string[]; newVal: string; setNewVal: (v: string) => void;
+  onAdd: (key: 'skillsDirs' | 'projectsDirs', val: string) => void;
+  onRemove: (key: 'skillsDirs' | 'projectsDirs', idx: number) => void;
+}) {
+  return (
+    <div className="subcard">
+      <div className="subcard__hd">
+        <div>
+          <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--tx-1)', letterSpacing: '-0.005em' }}>{title}</h3>
+          <div className="tx-3" style={{ fontSize: 11.5, marginTop: 2 }}>{sub}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input
+            className="input" style={{ width: 220 }}
+            placeholder="~/path/to/dir"
+            value={newVal}
+            onChange={e => setNewVal(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') onAdd(dirKey, newVal); }}
+          />
+          <button className="btn" onClick={() => onAdd(dirKey, newVal)}>
+            <Plus size={13} /> 添加目录
+          </button>
+        </div>
+      </div>
+      <div className="set-list">
+        {dirs.map((d, i) => (
+          <div key={i} className="set-row">
+            <div className="set-row__path">
+              <span className="set-row__drag"><GripVertical size={14} /></span>
+              <span className="set-row__path-text">{d}</span>
+              <Badge tone="ok" dot>已配置</Badge>
+            </div>
+            <div className="set-row__meta">
+              <button className="icon-btn" title="重新扫描" onClick={() => fetch('/api/scan', { method: 'POST' })}>
+                <RefreshCw size={12} />
+              </button>
+              <button className="icon-btn btn--danger" title="删除" onClick={() => onRemove(dirKey, i)}>
+                <Trash2 size={12} />
+              </button>
+            </div>
+          </div>
+        ))}
+        {dirs.length === 0 && (
+          <div style={{ padding: '12px 16px', color: 'var(--tx-3)', fontSize: 12 }}>
+            还没有配置目录 — 输入路径后点击「添加目录」
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function SettingsPage() {
   const [config, setConfig] = useState<QuasarConfig | null>(null);
@@ -85,57 +302,6 @@ export default function SettingsPage() {
   if (loading) return <div style={{ padding: 48, color: 'var(--tx-3)' }}>Loading…</div>;
   if (!config) return <div style={{ padding: 48, color: 'var(--bad)' }}>Failed to load config</div>;
 
-  const ScanList = ({ title, sub, dirKey, dirs, newVal, setNewVal }: {
-    title: React.ReactNode; sub: string;
-    dirKey: 'skillsDirs' | 'projectsDirs';
-    dirs: string[]; newVal: string; setNewVal: (v: string) => void;
-  }) => (
-    <div className="subcard">
-      <div className="subcard__hd">
-        <div>
-          <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--tx-1)', letterSpacing: '-0.005em' }}>{title}</h3>
-          <div className="tx-3" style={{ fontSize: 11.5, marginTop: 2 }}>{sub}</div>
-        </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <input
-            className="input" style={{ width: 220 }}
-            placeholder="~/path/to/dir"
-            value={newVal}
-            onChange={e => setNewVal(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') addDir(dirKey, newVal); }}
-          />
-          <button className="btn" onClick={() => addDir(dirKey, newVal)}>
-            <Plus size={13} /> 添加目录
-          </button>
-        </div>
-      </div>
-      <div className="set-list">
-        {dirs.map((d, i) => (
-          <div key={i} className="set-row">
-            <div className="set-row__path">
-              <span className="set-row__drag"><GripVertical size={14} /></span>
-              <span className="set-row__path-text">{d}</span>
-              <Badge tone="ok" dot>已配置</Badge>
-            </div>
-            <div className="set-row__meta">
-              <button className="icon-btn" title="重新扫描" onClick={() => fetch('/api/scan', { method: 'POST' })}>
-                <RefreshCw size={12} />
-              </button>
-              <button className="icon-btn btn--danger" title="删除" onClick={() => removeDir(dirKey, i)}>
-                <Trash2 size={12} />
-              </button>
-            </div>
-          </div>
-        ))}
-        {dirs.length === 0 && (
-          <div style={{ padding: '12px 16px', color: 'var(--tx-3)', fontSize: 12 }}>
-            还没有配置目录 — 输入路径后点击「添加目录」
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
   return (
     <div className="page">
       <div className="page__top">
@@ -156,6 +322,8 @@ export default function SettingsPage() {
               dirs={config.skillsDirs}
               newVal={newSkillsDir}
               setNewVal={setNewSkillsDir}
+              onAdd={addDir}
+              onRemove={removeDir}
             />
             <ScanList
               title={<Bi en="Projects directories" cn="Projects 扫描目录" />}
@@ -164,6 +332,8 @@ export default function SettingsPage() {
               dirs={config.projectsDirs}
               newVal={newProjectsDir}
               setNewVal={setNewProjectsDir}
+              onAdd={addDir}
+              onRemove={removeDir}
             />
           </div>
 
@@ -242,6 +412,12 @@ export default function SettingsPage() {
               </SettingRow>
             </div>
           </div>
+
+          <SectionHeader>API Pricing · 接口定价</SectionHeader>
+          <PricingTable
+            entries={config.pricing ?? []}
+            onChange={pricing => save({ pricing })}
+          />
         </div>
       </div>
     </div>

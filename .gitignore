@@ -42,3 +42,6 @@ yarn-error.log*
 next-env.d.ts
 _qa/
 .claude/
+
+# user-specific runtime config (contains private server IPs)
+quasar-config.json

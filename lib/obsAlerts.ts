@@ -31,6 +31,10 @@ interface ServiceSnapshot {
     error_rate: number
     avg_latency_ms: number
     total_cost_cny: number
+    asr_cost_cny?: number
+    daily_calls?: number
+    auth_error_count?: number
+    rate_limit_count?: number
   }
 }
 

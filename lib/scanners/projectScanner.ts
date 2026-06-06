@@ -6,6 +6,12 @@ import type { ProjectMeta } from '@/types'
 
 const DEPLOY_FILES = ['DEPLOY.md', 'DEPLOYMENT.md', 'Dockerfile', 'docker-compose.yml', 'docker-compose.yaml', 'vercel.json', 'railway.json', '.github/workflows']
 
+const PROJECT_INDICATORS = ['README.md', 'readme.md', 'package.json', 'requirements.txt', 'pyproject.toml', 'setup.py', '.git', 'Makefile', 'CLAUDE.md', 'main.py', 'app.py', 'index.ts', 'index.js']
+
+function isLikelyProject(dirPath: string): boolean {
+  return PROJECT_INDICATORS.some(f => fs.existsSync(path.join(dirPath, f)))
+}
+
 function detectTechStack(projectPath: string): string[] {
   const stack: string[] = []
   const pkgPath = path.join(projectPath, 'package.json')
@@ -137,6 +143,7 @@ export async function scanProjectsDir(dir: string): Promise<ProjectMeta[]> {
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue
     const projectPath = path.join(expanded, entry.name)
+    if (!isLikelyProject(projectPath)) continue
 
     try {
       const techStack = detectTechStack(projectPath)

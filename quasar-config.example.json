@@ -1,0 +1,16 @@
+{
+  "skillsDirs": [],
+  "projectsDirs": [],
+  "appearance": "dark",
+  "autoScan": false,
+  "scanIntervalMs": 1800000,
+  "obsServices": [
+    {
+      "id": "my-service",
+      "name": "My Service",
+      "baseUrl": "http://YOUR_SERVER_IP:8000",
+      "enabled": true
+    }
+  ],
+  "alertRules": []
+}
