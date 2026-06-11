@@ -2,9 +2,19 @@
 
 const SESSION_COOKIE = 'quasar_session'
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+const DEFAULT_SECRET = 'quasar-dev-secret-change-in-production'
 
 function getSecret(): string {
-  return process.env.QUASAR_SECRET || 'quasar-dev-secret-change-in-production'
+  const secret = process.env.QUASAR_SECRET
+  // Fail closed: if auth is enabled (password set) but the signing secret is
+  // missing or left at the public default, refuse to sign/verify. Otherwise
+  // anyone could forge a session token using the well-known default secret.
+  if (process.env.QUASAR_PASSWORD && (!secret || secret === DEFAULT_SECRET)) {
+    throw new Error(
+      'QUASAR_SECRET must be set to a strong, unique value when QUASAR_PASSWORD is enabled'
+    )
+  }
+  return secret || DEFAULT_SECRET
 }
 
 async function getKey(): Promise<CryptoKey> {
