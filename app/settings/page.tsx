@@ -43,10 +43,13 @@ function genId(): string {
 
 function NumInput({ value, onCommit }: { value: number; onCommit: (n: number) => void }) {
   const [local, setLocal] = useState(value === 0 ? '' : String(value))
-
-  useEffect(() => {
+  // Sync local input when the `value` prop changes, using React's render-time
+  // "adjust state on prop change" pattern instead of an effect.
+  const [prevValue, setPrevValue] = useState(value)
+  if (value !== prevValue) {
+    setPrevValue(value)
     setLocal(value === 0 ? '' : String(value))
-  }, [value])
+  }
 
   return (
     <input
@@ -68,6 +71,18 @@ function NumInput({ value, onCommit }: { value: number; onCommit: (n: number) =>
   )
 }
 
+// Module-scope component (must not be defined inside another component's render).
+function PriceCell({ type, val, onChangeVal }: { type: 'llm' | 'asr'; val: number; onChangeVal: (n: number) => void }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+      <NumInput value={val} onCommit={onChangeVal} />
+      <span style={{ fontSize: 10, color: 'var(--tx-3)', whiteSpace: 'nowrap' }}>
+        {type === 'asr' ? '¥/min' : '¥/1K'}
+      </span>
+    </div>
+  )
+}
+
 function PricingTable({ entries, onChange }: { entries: PricingEntry[]; onChange: (e: PricingEntry[]) => void }) {
   const [draft, setDraft] = useState<Omit<PricingEntry, 'id'>>(EMPTY_ENTRY)
 
@@ -85,15 +100,6 @@ function PricingTable({ entries, onChange }: { entries: PricingEntry[]; onChange
 
   const thStyle: React.CSSProperties = { fontSize: 10, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.06em', padding: '6px 8px', fontWeight: 500, textAlign: 'left', borderBottom: '1px solid var(--hl-2)', whiteSpace: 'nowrap' }
   const tdStyle: React.CSSProperties = { padding: '5px 8px', fontSize: 12, verticalAlign: 'middle' }
-
-  const PriceCell = ({ type, val, onChangeVal }: { type: 'llm' | 'asr'; val: number; onChangeVal: (n: number) => void }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
-      <NumInput value={val} onCommit={onChangeVal} />
-      <span style={{ fontSize: 10, color: 'var(--tx-3)', whiteSpace: 'nowrap' }}>
-        {type === 'asr' ? '¥/min' : '¥/1K'}
-      </span>
-    </div>
-  )
 
   return (
     <div className="subcard" style={{ marginBottom: 16 }}>
@@ -276,11 +282,13 @@ export default function SettingsPage() {
     setConfig(next);
     setSaving(true);
     try {
-      await fetch('/api/config', {
+      const res = await fetch('/api/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(next),
       });
+      const data = await res.json();
+      if (data.config) setConfig(data.config);
     } finally { setSaving(false); }
   };
 

@@ -48,18 +48,20 @@ export default function CmdK({ open, onClose }: CmdKProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Reset palette state + focus when the dialog opens (sync to external open state).
   useEffect(() => {
-    if (open) {
-      setQuery('');
-      setResults([]);
-      setActiveIdx(0);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
+    if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset on open
+    setQuery(''); setResults([]); setActiveIdx(0);
+    setTimeout(() => inputRef.current?.focus(), 50);
   }, [open]);
 
+  // Debounced search driven by query changes (intentional async-load effect).
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset when query too short
     if (query.length < 2) { setResults([]); setSearching(false); return; }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- show spinner during async search
     setSearching(true);
     debounceRef.current = setTimeout(async () => {
       try {

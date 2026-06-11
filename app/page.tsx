@@ -54,11 +54,11 @@ export default async function DashboardPage() {
     { id: 'alerts', label: 'Alerts', value: alerts.length, delta: alerts.length > 0 ? '需处理' : '全部正常', deltaKind: alerts.length > 0 ? 'down' as const : 'up' as const, icon: null, href: '/sync' },
   ];
 
-  // Recent items
+  // Recent items — sorted by last modified (most recent first), not random.
   const recent = [
-    ...skills.map(s => ({ kind: 'skill' as const, id: s.id, name: s.name, meta: s.category, when: timeAgo(s.lastModified), href: `/skills/${s.id}` })),
-    ...projects.map(p => ({ kind: 'project' as const, id: p.id, name: p.name, meta: p.lastCommit?.message?.slice(0, 40) || p.type, when: timeAgo(p.lastModified), href: `/projects/${p.id}` })),
-  ].sort(() => Math.random() - 0.5).slice(0, 5);
+    ...skills.map(s => ({ kind: 'skill' as const, id: s.id, name: s.name, meta: s.category, ts: new Date(s.lastModified).getTime(), when: timeAgo(s.lastModified), href: `/skills/${s.id}` })),
+    ...projects.map(p => ({ kind: 'project' as const, id: p.id, name: p.name, meta: p.lastCommit?.message?.slice(0, 40) || p.type, ts: new Date(p.lastModified).getTime(), when: timeAgo(p.lastModified), href: `/projects/${p.id}` })),
+  ].sort((a, b) => b.ts - a.ts).slice(0, 5);
 
   // Donut data
   const catBuckets: Record<string, number> = {};

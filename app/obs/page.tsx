@@ -273,6 +273,8 @@ export default function ObsPage() {
     } finally { setLoading(false); }
   }, []);
 
+  // Fetch-on-mount/refetch-on-change: load() sets loading state before awaiting.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional async data load
   useEffect(() => { load(days); }, [load, days]);
 
   const runPoll = async () => {

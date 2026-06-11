@@ -82,6 +82,8 @@ export default function SyncPage() {
   const [busyMap, setBusyMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [syncLog, setSyncLog] = useState<LogEntry[]>([]);
+  // Captured once at mount — avoids calling the impure Date.now() during render.
+  const [now] = useState(() => Date.now());
   const { toasts, show: showToast } = useToast();
 
   const loadData = () => Promise.all([
@@ -228,7 +230,6 @@ export default function SyncPage() {
             )}
             {syncLog.slice(0, 20).map((e, i) => {
               const d = new Date(e.timestamp);
-              const now = Date.now();
               const diff = now - e.timestamp;
               const timeStr = diff < 60000 ? 'just now'
                 : diff < 3600000 ? `${Math.floor(diff / 60000)}m ago`

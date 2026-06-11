@@ -184,6 +184,8 @@ function LessonsTab({ skillId }: { skillId: string }) {
     }
   };
 
+  // Fetch-on-mount: load() sets loading state before awaiting.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional async data load
   useEffect(() => { load(); }, [skillId]);
 
   const unlinked = all.filter(p => !linked.some(l => l.id === p.id));
@@ -355,8 +357,10 @@ function OverviewTab({ skill, templateFiles, usageTimeline, relatedProjects }: {
   usageTimeline: { date: string; count: number }[];
   relatedProjects: { id: string; name: string }[];
 }) {
+  // Captured once at mount — avoids calling the impure Date.now() during render.
+  const [nowMs] = useState(() => Date.now());
   const usageArr = Array.from({ length: 30 }, (_, i) => {
-    const d = new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const d = new Date(nowMs - (29 - i) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     return usageTimeline.find(u => u.date === d)?.count ?? 0;
   });
   const peak = Math.max(...usageArr, 0);

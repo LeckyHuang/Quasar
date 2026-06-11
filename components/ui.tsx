@@ -124,15 +124,21 @@ export function Donut({ data, size = 132, stroke = 18 }: DonutProps) {
   const total = data.reduce((s, d) => s + d.value, 0);
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
-  let acc = 0;
+  // Precompute each segment's cumulative start offset (prefix sum) so we never
+  // reassign a variable during render.
+  const offsets: number[] = [];
+  let running = 0;
+  for (const d of data) {
+    offsets.push(running);
+    running += total > 0 ? (d.value / total) * c : 0;
+  }
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--bg-5)" strokeWidth={stroke} />
       {data.map((d, i) => {
         const len = total > 0 ? (d.value / total) * c : 0;
         const dasharray = `${len} ${c - len}`;
-        const dashoffset = -acc;
-        acc += len;
+        const dashoffset = -offsets[i];
         return (
           <circle key={i} cx={size / 2} cy={size / 2} r={r} fill="none"
             stroke={d.color} strokeWidth={stroke}

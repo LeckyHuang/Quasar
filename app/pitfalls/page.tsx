@@ -217,6 +217,8 @@ export default function LessonsPage() {
     }
   };
 
+  // Fetch-on-mount: load() sets loading state before awaiting.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional async data load
   useEffect(() => { load(); }, []);
 
   const filtered = useMemo(() => {
