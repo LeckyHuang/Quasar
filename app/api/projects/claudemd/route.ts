@@ -5,8 +5,10 @@ import * as fs from 'fs'
 import * as path from 'path'
 
 export async function PUT(req: NextRequest) {
-  const { projectId, content } = await req.json() as { projectId: string; content: string }
-  if (!projectId || content == null) return NextResponse.json({ error: 'projectId and content required' }, { status: 400 })
+  const { projectId, content } = await req.json().catch(() => ({})) as { projectId?: unknown; content?: unknown }
+  if (typeof projectId !== 'string' || !projectId || typeof content !== 'string') {
+    return NextResponse.json({ error: 'projectId (string) and content (string) required' }, { status: 400 })
+  }
 
   const { projects } = await getData()
   const project = projects.find(p => p.id === projectId)

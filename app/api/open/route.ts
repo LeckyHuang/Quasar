@@ -29,8 +29,11 @@ async function tryInOrder(candidates: [string, string[]][]): Promise<boolean> {
 }
 
 export async function POST(req: NextRequest) {
-  const { action, path: rawPath } = await req.json() as { action: 'terminal' | 'finder' | 'editor'; path: string }
-  if (!rawPath) return NextResponse.json({ error: 'path required' }, { status: 400 })
+  const { action, path: rawPath } = await req.json().catch(() => ({})) as { action?: unknown; path?: unknown }
+  if (typeof rawPath !== 'string' || !rawPath) return NextResponse.json({ error: 'path required' }, { status: 400 })
+  if (action !== 'terminal' && action !== 'finder' && action !== 'editor') {
+    return NextResponse.json({ error: 'invalid action' }, { status: 400 })
+  }
 
   const target = expandPath(rawPath)
 

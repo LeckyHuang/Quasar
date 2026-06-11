@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createHash, timingSafeEqual } from 'crypto'
 import { signToken, SESSION_COOKIE } from '@/lib/auth'
+
+// Constant-time string comparison: hash both sides to a fixed length first so
+// neither the password length nor its content leaks through timing.
+function safeEqual(a: string, b: string): boolean {
+  const ha = createHash('sha256').update(a).digest()
+  const hb = createHash('sha256').update(b).digest()
+  return timingSafeEqual(ha, hb)
+}
 
 function sessionResponse(token: string) {
   const res = NextResponse.json({ ok: true })
@@ -22,7 +31,7 @@ export async function POST(req: NextRequest) {
       return sessionResponse(await signToken())
     }
 
-    if (password !== expected) {
+    if (typeof password !== 'string' || !safeEqual(password, expected)) {
       await new Promise(r => setTimeout(r, 500)) // slow brute-force
       return NextResponse.json({ error: '密码错误' }, { status: 401 })
     }

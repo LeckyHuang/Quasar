@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import { isNonEmptyStr, isStr } from '@/lib/validate'
 
 const SNIPPETS_PATH = path.join(os.homedir(), '.quasar', 'snippets.json')
 
@@ -31,7 +32,10 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json() as { name: string; heading: string; content: string }
+  const body = await req.json().catch(() => ({})) as { name?: unknown; heading?: unknown; content?: unknown }
+  if (!isNonEmptyStr(body.name) || !isStr(body.heading) || !isStr(body.content)) {
+    return NextResponse.json({ error: 'name (non-empty), heading and content must be strings' }, { status: 400 })
+  }
   const snippets = readSnippets()
   const newSnippet: Snippet = {
     id: `snip_${Date.now()}`,

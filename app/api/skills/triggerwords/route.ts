@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getData } from '@/lib/dataService'
 import { invalidateCache } from '@/lib/cache'
+import { isNonEmptyStr, isStrArray } from '@/lib/validate'
 import fs from 'fs'
 import path from 'path'
 
 // PUT /api/skills/triggerwords  body: { skillId, triggerWords: string[] }
 // Rewrites the 触发词 line inside SKILL.md (description frontmatter or body)
 export async function PUT(req: NextRequest) {
-  const { skillId, triggerWords } = await req.json() as { skillId: string; triggerWords: string[] }
-  if (!skillId) return NextResponse.json({ error: 'skillId required' }, { status: 400 })
+  const { skillId, triggerWords } = await req.json().catch(() => ({})) as { skillId?: unknown; triggerWords?: unknown }
+  if (!isNonEmptyStr(skillId)) return NextResponse.json({ error: 'skillId required' }, { status: 400 })
+  if (!isStrArray(triggerWords)) return NextResponse.json({ error: 'triggerWords must be string[]' }, { status: 400 })
 
   const { skills } = await getData()
   const skill = skills.find(s => s.id === skillId)

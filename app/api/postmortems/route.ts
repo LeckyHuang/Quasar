@@ -48,8 +48,13 @@ export async function GET(req: NextRequest) {
 
 // POST /api/postmortems  — create
 export async function POST(req: NextRequest) {
-  const body = await req.json() as Omit<Incident, 'id' | 'createdAt' | 'updatedAt'>
-  if (!body.entityId) return NextResponse.json({ error: 'entityId required' }, { status: 400 })
+  const body = await req.json().catch(() => ({})) as Omit<Incident, 'id' | 'createdAt' | 'updatedAt'>
+  if (typeof body.entityId !== 'string' || !body.entityId) {
+    return NextResponse.json({ error: 'entityId required' }, { status: 400 })
+  }
+  if (body.entityType !== 'skill' && body.entityType !== 'project') {
+    return NextResponse.json({ error: 'entityType must be skill or project' }, { status: 400 })
+  }
 
   const now = Date.now()
   const incident: Incident = {
