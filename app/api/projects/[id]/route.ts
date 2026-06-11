@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { NextRequest, NextResponse } from 'next/server'
 import { getData } from '@/lib/dataService'
-import { getGitStatus, getRecentCommits } from '@/lib/git/gitClient'
+import { getRecentCommits } from '@/lib/git/gitClient'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -27,20 +27,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (content) deployContent[f] = content.slice(0, 3000) // cap at 3kb per file
   }
 
-  // Live git status (ahead/behind)
-  let gitStatus = null
-  let commits: { hash: string; message: string; date: string; author: string }[] = []
-  if (project.hasGitRemote) {
-    [gitStatus, commits] = await Promise.all([
-      getGitStatus(project.path),
-      getRecentCommits(project.path),
-    ])
-  }
+  // ahead/behind come from the scanner's local git read (no network fetch);
+  // only the recent commit log is read live here (local `git log`).
+  const commits = project.hasGitRemote ? await getRecentCommits(project.path) : []
 
   return NextResponse.json({
     ...project,
-    gitAhead: gitStatus?.ahead ?? project.gitAhead,
-    gitBehind: gitStatus?.behind ?? project.gitBehind,
+    gitAhead: project.gitAhead,
+    gitBehind: project.gitBehind,
     readmeContent: readmeContent?.slice(0, 8000) || null,
     claudeContent,
     agentsContent,

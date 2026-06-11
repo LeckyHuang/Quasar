@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import { getData } from '@/lib/dataService';
-import { getGitStatus, getRecentCommits } from '@/lib/git/gitClient';
+import { getRecentCommits } from '@/lib/git/gitClient';
 import fs from 'fs';
 import path from 'path';
 import ProjectDetailClient from './ProjectDetailClient';
@@ -79,12 +79,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     ? readFile(project.deployFiles[0]) || ''
     : '';
 
-  const [gitStatus, commits] = project.hasGitRemote
-    ? await Promise.all([getGitStatus(project.path), getRecentCommits(project.path)])
-    : [null, []];
+  // ahead/behind come from the scanner's local `git rev-list` (no network fetch);
+  // only fetch the recent commit log here (local `git log`, also offline).
+  const commits = project.hasGitRemote ? await getRecentCommits(project.path) : [];
 
-  const ahead = gitStatus?.ahead ?? project.gitAhead;
-  const behind = gitStatus?.behind ?? project.gitBehind;
+  const ahead = project.gitAhead;
+  const behind = project.gitBehind;
 
   const projectData = {
     ...project,

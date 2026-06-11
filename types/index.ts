@@ -89,6 +89,9 @@ export interface QuasarConfig {
   obsServices: ObsService[]
   alertRules: AlertRule[]
   pricing: PricingEntry[]
+  // Optional path to a local SQLite obs.db for the per-project Obs tab.
+  // When unset or missing, the single-project obs endpoint degrades to empty data.
+  obsDbPath?: string
 }
 
 export interface CacheData {

@@ -1,34 +1,9 @@
 import simpleGit from 'simple-git'
 import type { SyncResult } from '@/types'
 
-export interface GitStatus {
-  ahead: number
-  behind: number
-  isClean: boolean
-  branch: string
-  hasRemote: boolean
-}
-
-export async function getGitStatus(repoPath: string): Promise<GitStatus> {
-  try {
-    const git = simpleGit(repoPath)
-    const remotes = await git.getRemotes(true)
-    if (remotes.length === 0) {
-      return { ahead: 0, behind: 0, isClean: true, branch: '', hasRemote: false }
-    }
-    await git.fetch(['--quiet'])
-    const status = await git.status()
-    return {
-      ahead: status.ahead,
-      behind: status.behind,
-      isClean: status.isClean(),
-      branch: status.current || '',
-      hasRemote: true,
-    }
-  } catch {
-    return { ahead: 0, behind: 0, isClean: true, branch: '', hasRemote: false }
-  }
-}
+// NOTE: ahead/behind status is read locally (offline) by the scanners via
+// `git rev-list`. Network access only happens through the explicit sync actions
+// below (Fetch / Pull / Push), never on page load.
 
 export async function gitFetch(repoPath: string, id: string, type: 'skill' | 'project'): Promise<SyncResult> {
   try {

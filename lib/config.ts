@@ -15,6 +15,7 @@ const DEFAULT_CONFIG: QuasarConfig = {
   obsServices: [],
   alertRules: [],
   pricing: [],
+  obsDbPath: '',
 }
 
 export function readConfig(): QuasarConfig {

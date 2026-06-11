@@ -1,16 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { execSync } from 'child_process'
+import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import { readConfig } from '@/lib/config'
 
-const OBS_DB = path.join(os.homedir(), 'Desktop', 'project', 'llm-wiki-kit', 'obs.db')
+function resolveObsDbPath(): string | null {
+  const configured = readConfig().obsDbPath
+  if (!configured) return null
+  const expanded = configured.startsWith('~/')
+    ? path.join(os.homedir(), configured.slice(2))
+    : configured
+  return fs.existsSync(expanded) ? expanded : null
+}
+
+// Structured empty payload so the Obs tab shows a clean zero-state instead of an error
+// when no obs.db is configured (or the configured file is missing).
+function emptyObsPayload(days: number) {
+  return {
+    ok: true,
+    summary: {
+      total_calls: 0, error_count: 0, error_rate: 0, avg_latency_ms: 0,
+      total_cost_cny: 0, total_tokens: 0, period_days: days,
+    },
+    by_day: [], by_model: [], recent_errors: [], recent_calls: [],
+  }
+}
 
 // Python 脚本：查询 obs.db，返回 JSON
-function queryObs(project: string | null, days: number): string {
+function queryObs(dbPath: string, project: string | null, days: number): string {
   const script = `
 import sqlite3, json, time, sys
 
-db_path = ${JSON.stringify(OBS_DB)}
+db_path = ${JSON.stringify(dbPath)}
 project = ${project ? JSON.stringify(project) : 'None'}
 since = time.time() - ${days} * 86400
 
@@ -93,8 +115,11 @@ export async function GET(req: NextRequest) {
   const rawDays = parseInt(req.nextUrl.searchParams.get('days') || '7', 10)
   const days = isNaN(rawDays) || rawDays <= 0 ? 7 : Math.min(rawDays, 365)
 
+  const dbPath = resolveObsDbPath()
+  if (!dbPath) return NextResponse.json(emptyObsPayload(days))
+
   try {
-    const out = execSync(`python3 -c '${queryObs(project, days).replace(/'/g, "'\\''")}'`, {
+    const out = execSync(`python3 -c '${queryObs(dbPath, project, days).replace(/'/g, "'\\''")}'`, {
       timeout: 8000,
       encoding: 'utf8',
     })
