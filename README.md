@@ -21,11 +21,14 @@ Built for Claude Code users, but works with any agent that organises skills in a
 
 ### Skill Management (`/skills`)
 - Card grid with category, trigger words, git status, and usage heat
-- Detail page with four tabs:
+- Detail page with six tabs:
   - **Overview** — trigger words (editable, written back to `SKILL.md`), usage bar chart from real history, related projects auto-detected, template file list
   - **SKILL.md** — full rendered Markdown preview with table support, one-click copy
   - **Templates** — file tree with live content preview
   - **Git** — remote info, recent commits, push / pull / fetch
+  - **Eval** — Darwin score history with trend chart; **Run Darwin** button opens Terminal and navigates to the skill directory for one-click evaluation
+  - **Lessons** — pitfall records sourced from `session-log.md`, linked per skill
+- Header actions: open in Finder / Editor, **Universalize** button (triggers skill-universalizer), GitHub link
 
 ### Project Management (`/projects`)
 - Card grid with tech stack badges, health ring, git ahead/behind, config alerts
@@ -38,7 +41,18 @@ Built for Claude Code users, but works with any agent that organises skills in a
   - **Lessons** — pitfall records sourced from `session-log.md`, linked per project
   - **Obs** — per-project LLM call metrics (cost, latency, error rate, recent calls)
 - Sidebar: file count, dependency count, `.env` status, health score breakdown, tech stack, git quick actions
-- Header actions: open in Terminal, open in Finder, link to GitHub
+- Header actions: open in Terminal, open in Finder, **Run Test** button (triggers test-architect), link to GitHub
+
+### Reports & Lifecycle (`/reports`)
+Unified report history for AI asset lifecycle operations — all skill and project runs flow here automatically.
+
+- **Timeline view** — chronological list of all darwin, test-architect, and skill-universalizer runs across all assets
+- **Summary stats** — total runs, darwin improvement rate, test runs, universalizer evaluations at a glance
+- **Filter** by run type (Darwin / Test / Universalizer) and target type (Skill / Project)
+- **Expandable detail cards** — per-run type: darwin shows score delta + improved dimension; test shows pass/fail breakdown + new issues; universalizer shows value × feasibility quadrant + verdict
+- **Launch Bridge** — skill and project detail pages have one-click buttons (`Run Darwin`, `Run Test`, `Universalize`) that open Terminal pre-navigated to the target directory; reports written to `~/.quasar/reports/` are automatically picked up here
+
+> Skills and projects emit a standard JSON envelope to `~/.quasar/reports/` after each run. The schema is additive — tools keep their native output formats and additionally write a summary report to the central store.
 
 ### LLM Observability (`/obs`)
 Multi-service monitoring panel for production Agent applications.
@@ -260,6 +274,15 @@ No external database. No remote services. All config and state live on your loca
 
 ## Roadmap
 
+### Lifecycle Management
+- [x] Central report store (`~/.quasar/reports/`) with unified JSON envelope schema
+- [x] Reports & Timeline page — all darwin / test-architect / skill-universalizer runs in one view
+- [x] Launch Bridge — one-click Terminal launch from skill/project detail pages (Run Darwin, Run Test, Universalize)
+- [ ] **Orchestrator** — trigger skill runs directly from QUASAR UI without opening Terminal (requires Claude Code SDK integration)
+- [ ] Asset creation entry point — create new skills from QUASAR with skill-creator pre-filled context
+- [ ] Score trend charts per skill (darwin history sparklines on skill cards)
+
+### Observability & Security
 - [x] LLM observability panel (cost, latency, error rate)
 - [x] Multi-service HTTP aggregation
 - [x] Alert rules + history

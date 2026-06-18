@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, Terminal, FolderOpen, GitBranch, ArrowUp, ArrowDown, RefreshCw, Clock, ChevronDown, ChevronUp, Link2, Link2Off } from 'lucide-react';
+import { ChevronLeft, Terminal, FolderOpen, GitBranch, ArrowUp, ArrowDown, RefreshCw, Clock, ChevronDown, ChevronUp, Link2, Link2Off, FlaskConical } from 'lucide-react';
 import { HealthRing, Badge, Chip, AheadBehind, Markdown, Bi, useToast, ToastStack, Spinner } from '@/components/ui';
 import ConstitutionEditor from '@/components/ConstitutionEditor';
 
@@ -421,6 +421,17 @@ export default function ProjectDetailClient({
   const { toasts, show: showToast } = useToast();
   const [claudeDraft, setClaudeDraft] = useState(claudeContent);
   const [claudeSaving, setClaudeSaving] = useState(false);
+  const [launchingTest, setLaunchingTest] = useState(false);
+
+  const runTest = async () => {
+    setLaunchingTest(true);
+    await fetch('/api/launch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skillType: 'test-architect', targetPath: project.path, targetName: project.name }),
+    });
+    setLaunchingTest(false);
+  };
 
   const sync = async (action: string) => {
     setSyncing(action);
@@ -503,6 +514,9 @@ export default function ProjectDetailClient({
         <div className="detail-header__actions">
           <button className="btn" onClick={() => fetch('/api/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'terminal', path: project.path }) })}><Terminal size={13} /> Terminal</button>
           <button className="btn" onClick={() => fetch('/api/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'finder', path: project.path }) })}><FolderOpen size={13} /> Finder</button>
+          <button className="btn" onClick={runTest} disabled={launchingTest} title="运行 test-architect 测试">
+            <FlaskConical size={13} /> {launchingTest ? '打开中…' : 'Run Test'}
+          </button>
           {project.gitRemote && (
             <a href={project.gitRemote.replace('git@github.com:', 'https://github.com/').replace('.git', '')}
               target="_blank" rel="noopener noreferrer" className="btn" style={{ textDecoration: 'none' }}>

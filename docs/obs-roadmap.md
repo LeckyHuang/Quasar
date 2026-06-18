@@ -1,10 +1,36 @@
-# Quasar obs 可观测性 + 安全 Roadmap
+# Quasar 功能 Roadmap
 
-> 上次更新：2026-06-04
+> 上次更新：2026-06-19
 
 ---
 
-## ✅ 已完成
+## ✅ 生命周期管理（2026-06-19 完成）
+
+| ID | 内容 |
+|----|------|
+| LC1 | 中央报告库 `~/.quasar/reports/` + 统一 `QuasarReport` JSON schema |
+| LC2 | `/api/reports` 读取接口（支持 runType / targetType / targetPath 过滤） |
+| LC3 | Reports 时间线页面（`/reports`）——汇总统计、筛选、可展开详情卡 |
+| LC4 | `/api/launch` Launch Bridge 接口——生成 `.command` 脚本 + `open` 触发 Terminal |
+| LC5 | Skill 详情页 Eval Tab：Run Darwin 按钮替换原「在终端运行」 |
+| LC6 | Skill 详情页 header：Universalize 按钮（触发 skill-universalizer） |
+| LC7 | Project 详情页 header：Run Test 按钮（触发 test-architect） |
+| LC8 | darwin-skill SKILL.md：Step 7 写入中央报告 |
+| LC9 | test-architect SKILL.md：Step 5 第 4 条沉淀动作写入中央报告 |
+| LC10 | skill-universalizer SKILL.md：Phase 1 完成后写入中央报告 |
+| LC11 | Sidebar 新增 Reports 导航入口 |
+
+## 待完成（生命周期管理 Phase 2）
+
+| ID | 内容 | 难度 | 说明 |
+|----|------|------|------|
+| LC-O1 | **Orchestrator**：从 QUASAR 界面直接触发工具运行（无需 Terminal） | 🔴 高 | 依赖 Claude Code SDK agent-trigger API，SDK 稳定后再评估 |
+| LC-O2 | 资产创建入口：在 QUASAR 填表 → 预填上下文 → 打开 Terminal 启动 skill-creator | 🟡 中 | Launch Bridge 机制 + 上下文 JSON 预写 |
+| LC-O3 | Skill 卡片 Darwin 趋势 sparkline（基于 results.tsv 最近 5 轮） | 🟢 低 | 数据已有，纯 UI 扩展 |
+
+---
+
+## ✅ obs 可观测性 + 安全（已完成）
 
 ### obs 功能
 | ID | 内容 |

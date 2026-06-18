@@ -23,11 +23,14 @@ QUASAR 是一个自托管的 Web 应用，为你的 AI 编程助手 Skills（技
 
 ### 技能管理（`/skills`）
 - 卡片网格：分类色块、触发词、Git 状态、使用热度
-- 详情页四个 Tab：
+- 详情页六个 Tab：
   - **概览** — 触发词（可编辑，直接写回 `SKILL.md`）、最近 30 天真实使用频率柱状图、关联项目自动检测、模板文件列表
   - **SKILL.md** — 完整 Markdown 渲染预览（含表格），一键复制
   - **模板库** — 文件树 + 右侧内容实时预览
   - **Git** — 远程信息、最近提交、Push / Pull / Fetch
+  - **Eval（评估）** — Darwin 评分历史与趋势图；**Run Darwin** 按钮一键打开终端并定位到技能目录，启动 darwin-skill 评估
+  - **Lessons（教训）** — 来自 `session-log.md` 的踩坑记录，可与技能关联
+- 顶部操作：在 Finder / 编辑器打开、**Universalize**（触发 skill-universalizer 通用化评估）、跳转 GitHub
 
 ### 项目管理（`/projects`）
 - 卡片网格：技术栈 badges、健康度环、Git ahead/behind、配置告警
@@ -40,7 +43,18 @@ QUASAR 是一个自托管的 Web 应用，为你的 AI 编程助手 Skills（技
   - **Lessons** — 来自 `session-log.md` 的踩坑记录，可与项目关联
   - **Obs** — 单项目 LLM 调用指标（成本、延迟、错误率、最近调用记录）
 - 左侧边栏：文件数、依赖数、`.env` 状态、健康度评分明细、技术栈、Git 快速操作
-- 顶部操作：在终端打开、在文件管理器打开、跳转 GitHub
+- 顶部操作：在终端打开、在 Finder 打开、**Run Test**（触发 test-architect 测试）、跳转 GitHub
+
+### 报告历史与生命周期（`/reports`）
+所有 AI 资产生命周期操作的统一报告中心——darwin、test-architect、skill-universalizer 的每次运行结果自动汇流至此。
+
+- **时间线视图** — 所有资产的运行记录，按时间倒序排列
+- **汇总统计** — 总报告数、darwin 改进率、测试运行次数、通用化评估数，一目了然
+- **过滤** — 按运行类型（Darwin / Test / Universalizer）和目标类型（Skill / Project）筛选
+- **可展开详情卡** — Darwin 显示分数变化和优化维度；Test 显示通过/失败明细和新发现问题；Universalizer 显示价值×可行性四象限和结论
+- **Launch Bridge（启动桥）** — Skill 和 Project 详情页均提供一键启动按钮（`Run Darwin`、`Run Test`、`Universalize`），点击后自动打开终端并定位到目标目录；运行结束后报告写入 `~/.quasar/reports/` 自动展示在此页
+
+> 每次工具运行后，Skill 和 Project 向 `~/.quasar/reports/` 写入标准 JSON 信封。各工具保留原生输出格式，额外写入摘要报告到中央库，互不干扰。
 
 ### LLM 可观测性监控（`/obs`）
 生产环境 Agent 应用的多服务监控面板。
@@ -268,6 +282,15 @@ chmod +x launch-quasar.command
 
 ## Roadmap
 
+### 生命周期管理
+- [x] 中央报告库（`~/.quasar/reports/`）+ 统一 JSON 信封 schema
+- [x] Reports 时间线页面——darwin / test-architect / skill-universalizer 全部运行记录统一呈现
+- [x] Launch Bridge——在 Skill / Project 详情页一键打开终端触发工具（Run Darwin、Run Test、Universalize）
+- [ ] **Orchestrator**——直接从 QUASAR 界面触发工具运行，无需打开终端（依赖 Claude Code SDK 集成）
+- [ ] 资产创建入口——在 QUASAR 中发起 skill-creator 创建新技能，自动纳入生命周期管理
+- [ ] Skill 卡片 Darwin 评分趋势 sparkline
+
+### 可观测性与安全
 - [x] LLM 可观测性面板（成本、延迟、错误率）
 - [x] 多服务 HTTP 聚合
 - [x] 告警规则 + 历史

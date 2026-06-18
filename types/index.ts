@@ -109,3 +109,46 @@ export interface SyncResult {
   message: string
   timestamp: string
 }
+
+// ─── Quasar Report (central lifecycle report store) ───────────────────────────
+
+export type ReportRunType = 'darwin' | 'test-architect' | 'skill-universalizer'
+export type ReportTargetType = 'skill' | 'project'
+
+export interface DarwinPayload {
+  scoreBefore: number
+  scoreAfter: number
+  dimension?: string
+  mode?: string
+  commit?: string
+}
+
+export interface TestPayload {
+  total: number
+  passed: number
+  failed_new: number
+  failed_preexisting: number
+  pass_rate: number
+  new_issues?: Array<{ priority: string; title: string; layer: string }>
+}
+
+export interface UniversalizerPayload {
+  verdict: 'go' | 'no-go' | 'go-with-changes'
+  valueScore: number
+  feasibilityScore: number
+  quadrant: string
+  summary: string
+}
+
+export interface QuasarReport {
+  id: string
+  runType: ReportRunType
+  targetPath: string
+  targetType: ReportTargetType
+  targetName: string
+  timestamp: string
+  status: string
+  headline: string
+  nativeReportPath?: string
+  payload: DarwinPayload | TestPayload | UniversalizerPayload
+}

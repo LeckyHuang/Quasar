@@ -3,8 +3,17 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, FolderOpen, ExternalLink, GitBranch, MoreHorizontal, Copy, Plus, ArrowUp, ArrowDown, RefreshCw, File, Link2, Link2Off } from 'lucide-react';
+import { ChevronLeft, FolderOpen, ExternalLink, GitBranch, MoreHorizontal, Copy, Plus, ArrowUp, ArrowDown, RefreshCw, File, Link2, Link2Off, Dna, FlaskConical, Share2 } from 'lucide-react';
 import { CatChip, Heat, Badge, Chip, AheadBehind, BarChart, Markdown, Bi, Spinner } from '@/components/ui';
+
+async function launchSkill(skillType: string, targetPath: string, targetName: string) {
+  const res = await fetch('/api/launch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ skillType, targetPath, targetName }),
+  });
+  return res.ok;
+}
 
 interface SkillData {
   id: string;
@@ -45,8 +54,9 @@ interface DarwinRun {
 }
 
 /* ─── EvalTab Component ─── */
-function EvalTab({ skillId, skillPath }: { skillId: string; skillPath: string }) {
+function EvalTab({ skillId, skillPath, skillName }: { skillId: string; skillPath: string; skillName: string }) {
   const [runs, setRuns] = useState<DarwinRun[] | null | undefined>(undefined);
+  const [launching, setLaunching] = useState(false);
 
   useEffect(() => {
     fetch(`/api/skills/evals?id=${skillId}`)
@@ -55,10 +65,11 @@ function EvalTab({ skillId, skillPath }: { skillId: string; skillPath: string })
       .catch(() => setRuns(null));
   }, [skillId]);
 
-  const openTerminal = () => fetch('/api/open', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'terminal', path: skillPath }),
-  });
+  const runDarwin = async () => {
+    setLaunching(true);
+    await launchSkill('darwin', skillPath, skillName);
+    setLaunching(false);
+  };
 
   if (runs === undefined) {
     return <div style={{ padding: 48, textAlign: 'center', color: 'var(--tx-3)', fontSize: 13 }}>加载中…</div>;
@@ -70,9 +81,11 @@ function EvalTab({ skillId, skillPath }: { skillId: string; skillPath: string })
         <div style={{ fontSize: 32, marginBottom: 12 }}>🧬</div>
         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx-1)', marginBottom: 8 }}>尚未运行 Darwin 评估</div>
         <div style={{ fontSize: 13, color: 'var(--tx-3)', marginBottom: 20 }}>
-          在技能目录下运行 darwin-skill，结果将写入 <span className="mono" style={{ fontSize: 11 }}>results.tsv</span>
+          点击下方按钮，Terminal 将自动打开并定位到 Skill 目录
         </div>
-        <button className="btn btn--primary" onClick={openTerminal}>在终端打开 →</button>
+        <button className="btn btn--primary" onClick={runDarwin} disabled={launching}>
+          <Dna size={13} /> {launching ? '正在打开终端…' : 'Run Darwin →'}
+        </button>
       </div>
     );
   }
@@ -100,7 +113,9 @@ function EvalTab({ skillId, skillPath }: { skillId: string; skillPath: string })
       <div className="subcard">
         <div className="subcard__hd">
           <h3 className="subcard__title">🧬 Darwin 评估概况</h3>
-          <button className="btn btn--sm" onClick={openTerminal}>在终端运行 →</button>
+          <button className="btn btn--sm btn--primary" onClick={runDarwin} disabled={launching}>
+            <Dna size={12} /> {launching ? '打开中…' : 'Run Darwin'}
+          </button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, margin: '12px 0' }}>
           {[
@@ -629,6 +644,13 @@ export default function SkillDetailClient({ skill, skillMdContent, commits, temp
 }) {
   const router = useRouter();
   const [tab, setTab] = useState('overview');
+  const [launchingUniv, setLaunchingUniv] = useState(false);
+
+  const runUniversalizer = async () => {
+    setLaunchingUniv(true);
+    await launchSkill('skill-universalizer', skill.path, skill.name);
+    setLaunchingUniv(false);
+  };
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [fileLoading, setFileLoading] = useState(false);
@@ -701,6 +723,9 @@ export default function SkillDetailClient({ skill, skillMdContent, commits, temp
           )}
           <button className="btn" onClick={() => fetch('/api/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'finder', path: skill.path }) })}><FolderOpen size={13} /> Finder</button>
           <button className="btn" onClick={() => fetch('/api/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'editor', path: skill.path }) })}><ExternalLink size={13} /> Editor</button>
+          <button className="btn" onClick={runUniversalizer} disabled={launchingUniv} title="通用化评估">
+            <Share2 size={13} /> {launchingUniv ? '打开中…' : 'Universalize'}
+          </button>
           <button className="btn btn--icon"><MoreHorizontal size={14} /></button>
         </div>
       </div>
@@ -762,7 +787,7 @@ export default function SkillDetailClient({ skill, skillMdContent, commits, temp
 
           {tab === 'git' && <GitTab skill={skill} commits={commits} />}
 
-          {tab === 'eval' && <EvalTab skillId={skill.id} skillPath={skill.path} />}
+          {tab === 'eval' && <EvalTab skillId={skill.id} skillPath={skill.path} skillName={skill.name} />}
 
           {tab === 'lessons' && <LessonsTab skillId={skill.id} />}
         </div>
