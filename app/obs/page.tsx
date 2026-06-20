@@ -30,7 +30,7 @@ interface ServiceResult {
   data?: {
     summary: { total_calls: number; error_count: number; error_rate: number; avg_latency_ms: number; total_cost_cny: number; total_tokens: number };
     by_project: Array<{ project: string; calls: number; cost_cny: number | null; avg_latency_ms: number | null; errors: number }>;
-    recent_errors: unknown[]; recent_calls: unknown[];
+    recent_errors: RecentError[]; recent_calls: unknown[];
   };
   error?: string;
 }
@@ -38,6 +38,10 @@ interface ModelRow {
   model: string; provider: string; service: string;
   calls: number; total_tokens: number; cost_cny: number; avg_latency_ms: number | null;
 }
+interface DayRow { day: string; calls: number; cost_cny: number | null; avg_latency_ms: number | null; errors: number }
+interface OperationRow { operation: string; span_type: string; calls: number; avg_latency_ms: number | null; input_tokens: number | null; output_tokens: number | null; cost_cny: number | null; errors: number }
+interface AsrRow { provider: string; calls: number; total_duration_s: number; total_minutes: number; cost_cny: number | null }
+interface RecentError { id: number; ts: number; project: string; operation: string; model: string; error_msg: string; error_type: string | null; latency_ms: number; serviceName?: string }
 interface AggregateTrace {
   trace_id: string; start_ts: number; total_latency_ms: number; status: string
   spans: unknown[]; serviceName: string; serviceId: string
@@ -46,6 +50,10 @@ interface AggregateData {
   summary: { total_calls: number; error_count: number; error_rate: number; avg_latency_ms: number; total_cost_cny: number; total_tokens: number; latency_p50?: number | null; latency_p95?: number | null; latency_p99?: number | null; auth_error_count?: number; rate_limit_count?: number } | null;
   services: ServiceResult[];
   by_model: ModelRow[];
+  by_day: DayRow[];
+  by_operation: OperationRow[];
+  asr_summary: AsrRow[];
+  recent_errors: RecentError[];
   traces: AggregateTrace[];
   alerts: AlertEvent[];
   days: number;
@@ -71,6 +79,160 @@ const METRIC_DEFAULTS: Record<string, number> = {
   rate_limit_count: 5,
 };
 
+/* ─── helpers ─── */
+const OP_LABELS: Record<string, string> = {
+  asr: 'ASR', ingest: '摄入', intent_analysis: '意图分析',
+  business_opportunity: '商机识别', reception_review: '接待复盘',
+  customer_brief: '客户简报', summarize: '摘要', classify: '分类',
+  extract: '提取', rerank: '重排', embedding: '向量化',
+  retrieval: '检索', qa: 'QA', response: '生成回复',
+  response_generation: '生成回复', plan: '规划', reflection: '反思',
+}
+function fmtOpName(op: string) { return OP_LABELS[op] ?? op.replace(/_/g, ' ') }
+
+/* ─── DayTrendChart ─── */
+function DayTrendChart({ byDay }: { byDay: DayRow[] }) {
+  if (byDay.length < 2) return null
+  const W = 600, H = 72, PAD_L = 0, PAD_R = 0, PAD_T = 4, PAD_B = 18
+  const chartW = W - PAD_L - PAD_R
+  const chartH = H - PAD_T - PAD_B
+  const maxCalls = Math.max(...byDay.map(d => d.calls), 1)
+  const maxCost = Math.max(...byDay.map(d => d.cost_cny ?? 0), 0.0001)
+  const hasCost = byDay.some(d => d.cost_cny != null && d.cost_cny > 0)
+  const n = byDay.length
+  const barW = Math.max(2, (chartW / n) * 0.55)
+  const step = chartW / n
+
+  const xOf = (i: number) => PAD_L + i * step + step * 0.5
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 80, display: 'block' }}>
+      {/* Bars: calls */}
+      {byDay.map((d, i) => {
+        const bh = (d.calls / maxCalls) * chartH
+        const x = xOf(i) - barW / 2
+        const y = PAD_T + chartH - bh
+        return (
+          <g key={i}>
+            <rect x={x} y={y} width={barW} height={bh}
+              fill={d.errors > 0 ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.45)'} rx={1.5} />
+          </g>
+        )
+      })}
+      {/* Line: cost */}
+      {hasCost && (
+        <polyline
+          points={byDay.map((d, i) => {
+            const cy = PAD_T + chartH - ((d.cost_cny ?? 0) / maxCost) * chartH
+            return `${xOf(i)},${cy}`
+          }).join(' ')}
+          fill="none" stroke="rgba(245,158,11,0.8)" strokeWidth={1.5} strokeLinejoin="round"
+        />
+      )}
+      {/* X axis labels */}
+      {byDay.map((d, i) => {
+        const show = n <= 10 || i % Math.ceil(n / 7) === 0 || i === n - 1
+        if (!show) return null
+        const label = d.day.slice(5)
+        return (
+          <text key={i} x={xOf(i)} y={H - 2} textAnchor="middle"
+            fontSize={8} fill="rgba(255,255,255,0.3)" fontFamily="monospace">
+            {label}
+          </text>
+        )
+      })}
+    </svg>
+  )
+}
+
+/* ─── AsrPanel ─── */
+function AsrPanel({ asrSummary }: { asrSummary: AsrRow[] }) {
+  if (!asrSummary || asrSummary.length === 0) return null
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>ASR 用量（时长计费）</div>
+      <div className="subcard" style={{ padding: 0, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--hl-2)' }}>
+              {['服务商', '调用次数', '总时长', '总分钟数', '成本'].map(h => (
+                <th key={h} style={{ padding: '9px 14px', textAlign: h === '服务商' ? 'left' : 'right', color: 'var(--tx-3)', fontWeight: 500, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {asrSummary.map((a, i) => (
+              <tr key={i} style={{ borderBottom: '1px solid var(--hl-1)' }}>
+                <td style={{ padding: '9px 14px', color: 'var(--tx-1)', fontFamily: 'monospace' }}>{a.provider}</td>
+                <td style={{ padding: '9px 14px', textAlign: 'right', color: 'var(--ac-1)', fontWeight: 600 }}>{a.calls}</td>
+                <td style={{ padding: '9px 14px', textAlign: 'right', color: 'var(--tx-2)', fontFamily: 'monospace' }}>
+                  {a.total_duration_s >= 3600
+                    ? `${(a.total_duration_s / 3600).toFixed(1)}h`
+                    : a.total_duration_s >= 60
+                      ? `${(a.total_duration_s / 60).toFixed(1)}min`
+                      : `${Math.round(a.total_duration_s)}s`}
+                </td>
+                <td style={{ padding: '9px 14px', textAlign: 'right', color: 'var(--tx-2)', fontFamily: 'monospace' }}>{a.total_minutes.toFixed(2)} min</td>
+                <td style={{ padding: '9px 14px', textAlign: 'right', color: a.cost_cny != null && a.cost_cny > 0 ? 'var(--warn)' : 'var(--tx-3)', fontFamily: 'monospace' }}>
+                  {a.cost_cny != null && a.cost_cny > 0 ? `¥${a.cost_cny.toFixed(4)}` : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+/* ─── OperationTable ─── */
+function OperationTable({ byOperation }: { byOperation: OperationRow[] }) {
+  if (!byOperation || byOperation.length === 0) return null
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>操作步骤明细</div>
+      <div className="subcard" style={{ padding: 0, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--hl-2)' }}>
+              {['操作', '类型', '调用', '平均延迟', 'Token 用量', '成本', '错误'].map(h => (
+                <th key={h} style={{ padding: '9px 14px', textAlign: h === '操作' ? 'left' : 'right', color: 'var(--tx-3)', fontWeight: 500, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {byOperation.map((op, i) => (
+              <tr key={i} style={{ borderBottom: '1px solid var(--hl-1)' }}>
+                <td style={{ padding: '9px 14px', color: 'var(--tx-1)', fontWeight: 500 }}>{fmtOpName(op.operation)}</td>
+                <td style={{ padding: '9px 14px', textAlign: 'right' }}>
+                  <span style={{
+                    fontSize: 10, padding: '1px 6px', borderRadius: 3, fontFamily: 'monospace', fontWeight: 600,
+                    background: op.span_type === 'llm' ? 'rgba(91,141,239,0.15)' : 'rgba(45,212,191,0.12)',
+                    color: op.span_type === 'llm' ? 'var(--ac-1)' : 'var(--ok)',
+                  }}>{op.span_type === 'llm' ? 'LLM' : 'SPAN'}</span>
+                </td>
+                <td style={{ padding: '9px 14px', textAlign: 'right', color: 'var(--ac-1)', fontWeight: 600 }}>{op.calls}</td>
+                <td style={{ padding: '9px 14px', textAlign: 'right', color: op.avg_latency_ms != null && op.avg_latency_ms > 30000 ? 'var(--warn)' : 'var(--tx-2)', fontFamily: 'monospace' }}>
+                  {op.avg_latency_ms != null ? fmtLatency(op.avg_latency_ms) : '—'}
+                </td>
+                <td style={{ padding: '9px 14px', textAlign: 'right', color: 'var(--tx-2)', fontFamily: 'monospace', fontSize: 11 }}>
+                  {op.input_tokens != null ? `↑${op.input_tokens.toLocaleString()} ↓${(op.output_tokens ?? 0).toLocaleString()}` : '—'}
+                </td>
+                <td style={{ padding: '9px 14px', textAlign: 'right', color: op.cost_cny != null && op.cost_cny > 0 ? 'var(--warn)' : 'var(--tx-3)', fontFamily: 'monospace' }}>
+                  {op.cost_cny != null && op.cost_cny > 0 ? `¥${op.cost_cny.toFixed(4)}` : '—'}
+                </td>
+                <td style={{ padding: '9px 14px', textAlign: 'right', color: op.errors > 0 ? 'var(--bad)' : 'var(--tx-3)', fontFamily: 'monospace' }}>
+                  {op.errors > 0 ? op.errors : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 /* ─── Sub-components ─── */
 function MetricCard({ label, value, color }: { label: string; value: string; color: string }) {
   return (
@@ -94,19 +256,37 @@ function ServiceCard({ svc }: { svc: ServiceResult }) {
         <Badge tone={svc.status === 'ok' ? 'ok' : 'bad'} dot>{svc.status === 'ok' ? '在线' : '离线'}</Badge>
       </div>
       {svc.status === 'ok' && s && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-          {[
-            { label: '调用', value: s.total_calls.toLocaleString(), color: '#3b82f6' },
-            { label: '成本', value: fmtCost(s.total_cost_cny), color: '#10b981' },
-            { label: '延迟', value: fmtLatency(s.avg_latency_ms), color: '#f59e0b' },
-            { label: '错误率', value: `${(s.error_rate * 100).toFixed(1)}%`, color: s.error_rate > 0.05 ? '#ef4444' : 'var(--tx-2)' },
-          ].map(m => (
-            <div key={m.label} style={{ background: 'var(--bg-3)', borderRadius: 6, padding: '6px 10px', textAlign: 'center' }}>
-              <div style={{ fontSize: 10, color: 'var(--tx-3)', marginBottom: 2 }}>{m.label}</div>
-              <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: m.color }}>{m.value}</div>
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+            {[
+              { label: '调用', value: s.total_calls.toLocaleString(), color: '#3b82f6' },
+              { label: '成本', value: fmtCost(s.total_cost_cny), color: '#10b981' },
+              { label: '延迟', value: fmtLatency(s.avg_latency_ms), color: '#f59e0b' },
+              { label: '错误率', value: `${(s.error_rate * 100).toFixed(1)}%`, color: s.error_rate > 0.05 ? '#ef4444' : 'var(--tx-2)' },
+            ].map(m => (
+              <div key={m.label} style={{ background: 'var(--bg-3)', borderRadius: 6, padding: '6px 10px', textAlign: 'center' }}>
+                <div style={{ fontSize: 10, color: 'var(--tx-3)', marginBottom: 2 }}>{m.label}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'monospace', color: m.color }}>{m.value}</div>
+              </div>
+            ))}
+          </div>
+          {/* A4: by_project — 多项目时展示 */}
+          {(svc.data?.by_project ?? []).length > 1 && (
+            <div style={{ marginTop: 10, borderTop: '1px solid var(--hl-1)', paddingTop: 10 }}>
+              <div style={{ fontSize: 10, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>按项目</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {(svc.data?.by_project ?? []).map((p, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11 }}>
+                    <span style={{ flex: 1, color: 'var(--tx-2)', fontFamily: 'monospace' }}>{p.project}</span>
+                    <span style={{ color: 'var(--ac-1)' }}>{p.calls} 次</span>
+                    <span style={{ color: 'var(--tx-3)' }}>{p.cost_cny != null ? fmtCost(p.cost_cny) : '—'}</span>
+                    {p.errors > 0 && <span style={{ color: 'var(--bad)' }}>{p.errors} 错</span>}
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
       {svc.status === 'down' && (
         <div style={{ fontSize: 12, color: '#ef4444', fontFamily: 'monospace', marginTop: 4 }}>{svc.error}</div>
@@ -361,6 +541,16 @@ export default function ObsPage() {
                     } value={fmtLatency(s.avg_latency_ms)} color="#f59e0b" />
                     <MetricCard label="错误率" value={`${(s.error_rate * 100).toFixed(1)}%`} color={s.error_rate > 0.05 ? '#ef4444' : 'var(--tx-1)'} />
                   </div>
+                  {/* A3: 日趋势图 */}
+                  {(data?.by_day ?? []).length >= 2 && (
+                    <div className="subcard" style={{ padding: '10px 14px 6px' }}>
+                      <div style={{ fontSize: 11, color: 'var(--tx-3)', marginBottom: 6, display: 'flex', gap: 16 }}>
+                        <span>调用趋势（蓝=调用量，橙=成本）</span>
+                        {(data?.by_day ?? []).some(d => d.errors > 0) && <span style={{ color: 'var(--bad)' }}>红=含错误</span>}
+                      </div>
+                      <DayTrendChart byDay={data?.by_day ?? []} />
+                    </div>
+                  )}
                   {((s.auth_error_count ?? 0) > 0 || (s.rate_limit_count ?? 0) > 0) && (
                     <div style={{ display: 'flex', gap: 10 }}>
                       <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.06em', alignSelf: 'center', whiteSpace: 'nowrap' }}>安全事件</div>
@@ -406,6 +596,55 @@ export default function ObsPage() {
                             <td style={{ padding: '9px 14px', textAlign: 'right', color: m.avg_latency_ms && m.avg_latency_ms > 30000 ? 'var(--warn)' : 'var(--tx-2)', fontFamily: 'monospace' }}>
                               {m.avg_latency_ms ? `${(m.avg_latency_ms / 1000).toFixed(1)}s` : '—'}
                             </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* B1: 操作步骤明细 */}
+              {(data?.by_operation ?? []).length > 0 && (
+                <OperationTable byOperation={data?.by_operation ?? []} />
+              )}
+
+              {/* A1: ASR 用量面板 */}
+              {(data?.asr_summary ?? []).length > 0 && (
+                <AsrPanel asrSummary={data?.asr_summary ?? []} />
+              )}
+
+              {/* A2: 错误浏览器 */}
+              {(data?.recent_errors ?? []).length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    最近错误 · {(data?.recent_errors ?? []).length} 条
+                  </div>
+                  <div className="subcard" style={{ padding: 0, overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--hl-2)' }}>
+                          {['时间', '服务', '操作', '模型', '错误类型', '错误信息', '延迟'].map(h => (
+                            <th key={h} style={{ padding: '8px 12px', textAlign: h === '错误信息' ? 'left' : (h === '时间' || h === '服务' || h === '操作' || h === '模型' ? 'left' : 'right'), color: 'var(--tx-3)', fontWeight: 500, fontSize: 11 }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(data?.recent_errors ?? []).slice(0, 20).map((e, i) => (
+                          <tr key={i} style={{ borderBottom: '1px solid var(--hl-1)' }}>
+                            <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: 'var(--tx-3)', whiteSpace: 'nowrap', fontSize: 11 }}>{fmtTs(e.ts)}</td>
+                            <td style={{ padding: '7px 12px', color: 'var(--tx-3)', fontSize: 11 }}>{e.serviceName ?? e.project}</td>
+                            <td style={{ padding: '7px 12px', color: 'var(--tx-2)' }}>{fmtOpName(e.operation)}</td>
+                            <td style={{ padding: '7px 12px', color: 'var(--tx-2)', fontFamily: 'monospace', fontSize: 11 }}>{e.model || '—'}</td>
+                            <td style={{ padding: '7px 12px', textAlign: 'right' }}>
+                              {e.error_type && (
+                                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, background: 'rgba(239,68,68,0.12)', color: 'var(--bad)', fontFamily: 'monospace' }}>{e.error_type}</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '7px 12px', color: 'var(--bad)', fontSize: 11, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {e.error_msg || '—'}
+                            </td>
+                            <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--tx-3)', fontSize: 11 }}>{fmtLatency(e.latency_ms)}</td>
                           </tr>
                         ))}
                       </tbody>

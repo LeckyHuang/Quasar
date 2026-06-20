@@ -30,7 +30,8 @@ interface ObsStatsResponse {
   by_day: Array<{ day: string; calls: number; cost_cny: number | null; avg_latency_ms: number | null; errors: number }>
   by_model: Array<{ model: string; provider: string; calls: number; input_tokens: number | null; output_tokens: number | null; total_tokens: number; cost_cny: number | null; avg_latency_ms: number | null }>
   by_project: Array<{ project: string; calls: number; cost_cny: number | null; avg_latency_ms: number | null; errors: number }>
-  recent_errors: unknown[]
+  by_operation?: Array<{ operation: string; span_type: string; calls: number; avg_latency_ms: number | null; input_tokens: number | null; output_tokens: number | null; cost_cny: number | null; errors: number }>
+  recent_errors: Array<{ id: number; ts: number; project: string; operation: string; model: string; error_msg: string; error_type: string | null; latency_ms: number }>
   recent_calls: unknown[]
   asr_stats?: Array<{
     provider: string
@@ -148,6 +149,91 @@ function aggregateAsrCost(
   })
 }
 
+function aggregateByDay(
+  results: Array<{ status: 'ok'; data: ObsStatsResponse }>,
+) {
+  const map = new Map<string, { calls: number; cost_cny: number | null; latency_sum: number; latency_count: number; errors: number }>()
+  for (const r of results) {
+    for (const d of r.data.by_day) {
+      const ex = map.get(d.day)
+      if (ex) {
+        ex.calls += d.calls
+        ex.cost_cny = ex.cost_cny != null && d.cost_cny != null ? ex.cost_cny + d.cost_cny : (ex.cost_cny ?? d.cost_cny)
+        if (d.avg_latency_ms != null) { ex.latency_sum += d.avg_latency_ms * d.calls; ex.latency_count += d.calls }
+        ex.errors += d.errors
+      } else {
+        map.set(d.day, {
+          calls: d.calls, cost_cny: d.cost_cny,
+          latency_sum: d.avg_latency_ms != null ? d.avg_latency_ms * d.calls : 0,
+          latency_count: d.avg_latency_ms != null ? d.calls : 0,
+          errors: d.errors,
+        })
+      }
+    }
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([day, v]) => ({
+      day,
+      calls: v.calls,
+      cost_cny: v.cost_cny != null ? Math.round(v.cost_cny * 10000) / 10000 : null,
+      avg_latency_ms: v.latency_count > 0 ? Math.round(v.latency_sum / v.latency_count) : null,
+      errors: v.errors,
+    }))
+}
+
+function aggregateByOperation(
+  results: Array<{ status: 'ok'; data: ObsStatsResponse }>,
+) {
+  const map = new Map<string, {
+    operation: string; span_type: string
+    calls: number; latency_sum: number; latency_count: number
+    input_tokens: number; output_tokens: number; cost_cny_sum: number | null; errors: number
+  }>()
+  for (const r of results) {
+    for (const op of r.data.by_operation ?? []) {
+      const key = `${op.operation}::${op.span_type}`
+      const ex = map.get(key)
+      if (ex) {
+        ex.calls += op.calls
+        if (op.avg_latency_ms != null) { ex.latency_sum += op.avg_latency_ms * op.calls; ex.latency_count += op.calls }
+        ex.input_tokens += op.input_tokens ?? 0
+        ex.output_tokens += op.output_tokens ?? 0
+        if (ex.cost_cny_sum !== null && op.cost_cny !== null) ex.cost_cny_sum += op.cost_cny
+        else if (op.cost_cny !== null && ex.cost_cny_sum === null) ex.cost_cny_sum = op.cost_cny
+        ex.errors += op.errors
+      } else {
+        map.set(key, {
+          operation: op.operation, span_type: op.span_type, calls: op.calls,
+          latency_sum: op.avg_latency_ms != null ? op.avg_latency_ms * op.calls : 0,
+          latency_count: op.avg_latency_ms != null ? op.calls : 0,
+          input_tokens: op.input_tokens ?? 0, output_tokens: op.output_tokens ?? 0,
+          cost_cny_sum: op.cost_cny ?? null, errors: op.errors,
+        })
+      }
+    }
+  }
+  return Array.from(map.values())
+    .map(op => ({
+      operation: op.operation, span_type: op.span_type, calls: op.calls,
+      avg_latency_ms: op.latency_count > 0 ? Math.round(op.latency_sum / op.latency_count) : null,
+      input_tokens: op.span_type === 'llm' ? op.input_tokens : null,
+      output_tokens: op.span_type === 'llm' ? op.output_tokens : null,
+      cost_cny: op.cost_cny_sum != null ? Math.round(op.cost_cny_sum * 10000) / 10000 : null,
+      errors: op.errors,
+    }))
+    .sort((a, b) => b.calls - a.calls)
+}
+
+function aggregateRecentErrors(
+  results: Array<{ id: string; name: string; status: 'ok'; data: ObsStatsResponse }>,
+) {
+  return results
+    .flatMap(r => r.data.recent_errors.map(e => ({ ...e, serviceName: r.name })))
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, 50)
+}
+
 function aggregateSummaries(results: Array<{ status: 'ok'; data: ObsStatsResponse }>) {
   let total_calls = 0, error_count = 0, total_cost_cny = 0, total_tokens = 0
   let latency_sum = 0, latency_count = 0
@@ -217,6 +303,9 @@ export async function GET(req: NextRequest) {
   const okResults = results.filter(r => r.status === 'ok') as Array<{ status: 'ok'; data: ObsStatsResponse } & { id: string; name: string; baseUrl: string }>
   const llmSummary = okResults.length > 0 ? aggregateSummaries(okResults) : null
   const by_model = aggregateByModel(okResults, config.pricing ?? [])
+  const by_day = aggregateByDay(okResults)
+  const by_operation = aggregateByOperation(okResults)
+  const recent_errors = aggregateRecentErrors(okResults)
 
   // ASR cost aggregation (from full SQL stats returned by each service)
   const asr_summary = aggregateAsrCost(okResults, config.pricing ?? [])
@@ -242,7 +331,10 @@ export async function GET(req: NextRequest) {
     summary,
     services: results,
     by_model,
+    by_day,
+    by_operation,
     asr_summary,
+    recent_errors,
     traces,
     alerts: readAlertHistory().slice(0, 50),
     days,

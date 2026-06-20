@@ -193,7 +193,7 @@ function SpanRow({ span, traceStart, totalMs }: { span: TraceSpan; traceStart: n
         {fmtLatency(span.latency_ms)}
       </div>
 
-      {/* Far right: token + cost (LLM only) */}
+      {/* Far right: token / cost / ASR duration */}
       <div style={{ width: 120, textAlign: 'right', flexShrink: 0, paddingLeft: 8 }}>
         {hasTokens && (
           <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--tx-3)' }}>
@@ -205,11 +205,23 @@ function SpanRow({ span, traceStart, totalMs }: { span: TraceSpan; traceStart: n
             ¥{span.cost_cny!.toFixed(4)}
           </span>
         )}
-        {!hasTokens && !hasCost && span.type === 'span' && (
-          span.operation === 'asr'
-            ? <span style={{ fontSize: 9.5, padding: '1px 5px', borderRadius: 3, background: 'rgba(245,158,11,0.12)', color: 'var(--warn)', fontFamily: 'monospace', letterSpacing: '0.02em' }}>时长计费</span>
-            : <span style={{ fontSize: 10, color: 'var(--tx-4, var(--tx-3))', fontFamily: 'monospace' }}>—</span>
-        )}
+        {!hasTokens && !hasCost && span.type === 'span' && (() => {
+          const dur = span.metadata?.audio_duration_s as number | undefined
+          if (span.operation === 'asr' && dur != null && dur > 0) {
+            const mins = Math.floor(dur / 60)
+            const secs = Math.round(dur % 60)
+            const label = mins > 0 ? `${mins}m${secs}s` : `${secs}s`
+            return (
+              <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--warn)' }}>
+                🎙 {label}
+              </span>
+            )
+          }
+          if (span.operation === 'asr') {
+            return <span style={{ fontSize: 9.5, padding: '1px 5px', borderRadius: 3, background: 'rgba(245,158,11,0.12)', color: 'var(--warn)', fontFamily: 'monospace', letterSpacing: '0.02em' }}>时长计费</span>
+          }
+          return <span style={{ fontSize: 10, color: 'var(--tx-4, var(--tx-3))', fontFamily: 'monospace' }}>—</span>
+        })()}
       </div>
     </div>
   );
