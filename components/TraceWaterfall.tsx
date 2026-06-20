@@ -15,6 +15,7 @@ interface TraceSpan {
   cost_cny?: number;
   input_tokens?: number;
   output_tokens?: number;
+  metadata?: Record<string, unknown>;
 }
 
 interface Trace {
@@ -28,6 +29,61 @@ interface Trace {
 interface TraceWaterfallProps {
   traces: Trace[];
   serviceName: string;
+}
+
+// Common operation → human-readable label. Unknown ops fall back to formatted snake_case.
+const OP_LABELS: Record<string, string> = {
+  asr: 'ASR',
+  ingest: '摄入',
+  intent_analysis: '意图分析',
+  business_opportunity: '商机识别',
+  reception_review: '接待复盘',
+  customer_brief: '客户简报',
+  summarize: '摘要',
+  summarization: '摘要',
+  classify: '分类',
+  extract: '提取',
+  rerank: '重排',
+  embedding: '向量化',
+  retrieval: '检索',
+  qa: 'QA',
+  response: '生成回复',
+  response_generation: '生成回复',
+  plan: '规划',
+  reflection: '反思',
+  tool_call: '工具调用',
+};
+
+function fmtOpName(op: string): string {
+  return OP_LABELS[op] ?? op.replace(/_/g, ' ');
+}
+
+// Build a readable flow label from spans, e.g. "ASR → 意图分析 → 生成回复"
+function traceSemanticLabel(spans: TraceSpan[]): string {
+  const seen = new Set<string>();
+  const ops: string[] = [];
+  for (const s of spans) {
+    if (!seen.has(s.operation)) {
+      seen.add(s.operation);
+      ops.push(fmtOpName(s.operation));
+    }
+  }
+  if (ops.length === 0) return '—';
+  if (ops.length <= 4) return ops.join(' → ');
+  return ops.slice(0, 3).join(' → ') + ` +${ops.length - 3}`;
+}
+
+function traceTotalTokens(spans: TraceSpan[]): number {
+  return spans.reduce((sum, s) => sum + (s.input_tokens ?? 0) + (s.output_tokens ?? 0), 0);
+}
+
+function traceTotalCost(spans: TraceSpan[]): number | null {
+  let total = 0;
+  let any = false;
+  for (const s of spans) {
+    if (s.cost_cny != null && s.cost_cny > 0) { total += s.cost_cny; any = true; }
+  }
+  return any ? total : null;
 }
 
 function fmtLatency(ms: number): string {
@@ -46,11 +102,6 @@ function opColor(span: TraceSpan): string {
   return 'var(--ok)';
 }
 
-function opLabel(op: string): string {
-  if (op.startsWith('llm:')) return op.slice(4);
-  return op;
-}
-
 const STRIPE = `repeating-linear-gradient(
   45deg,
   transparent,
@@ -65,6 +116,9 @@ function SpanRow({ span, traceStart, totalMs }: { span: TraceSpan; traceStart: n
   const widthPct = totalMs > 0 ? (span.latency_ms / totalMs) * 100 : 0;
   const color = opColor(span);
 
+  const hasTokens = span.input_tokens != null;
+  const hasCost = span.cost_cny != null && span.cost_cny > 0;
+
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: '3px 0', position: 'relative' }}>
       {/* Left: label column */}
@@ -78,9 +132,17 @@ function SpanRow({ span, traceStart, totalMs }: { span: TraceSpan; traceStart: n
         }}>
           {span.type === 'llm' ? 'LLM' : 'SPAN'}
         </span>
-        <span style={{ fontSize: 11.5, color: 'var(--tx-2)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {opLabel(span.operation)}
-        </span>
+        <div style={{ overflow: 'hidden' }}>
+          <div style={{ fontSize: 11.5, color: 'var(--tx-2)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {fmtOpName(span.operation)}
+          </div>
+          {/* Sub-label: provider/model */}
+          {(span.provider || span.model) && (
+            <div style={{ fontSize: 9.5, color: 'var(--tx-3)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
+              {[span.provider, span.model].filter(Boolean).join(' · ')}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Center: waterfall bar */}
@@ -121,14 +183,6 @@ function SpanRow({ span, traceStart, totalMs }: { span: TraceSpan; traceStart: n
             pointerEvents: 'none',
           }}>
             <span style={{ color: 'var(--tx-1)', fontWeight: 600 }}>{fmtLatency(span.latency_ms)}</span>
-            {span.provider && <span style={{ color: 'var(--tx-3)', marginLeft: 6 }}>{span.provider}</span>}
-            {span.model && <span style={{ color: 'var(--tx-3)', marginLeft: 6 }}>{span.model}</span>}
-            {span.cost_cny != null && span.cost_cny > 0 && (
-              <span style={{ color: 'var(--warn)', marginLeft: 6 }}>¥{span.cost_cny.toFixed(4)}</span>
-            )}
-            {span.input_tokens != null && (
-              <span style={{ color: 'var(--tx-3)', marginLeft: 6 }}>↑{span.input_tokens} ↓{span.output_tokens}</span>
-            )}
             {span.error_msg && <span style={{ color: 'var(--bad)', marginLeft: 6 }}>{span.error_msg.slice(0, 40)}</span>}
           </div>
         )}
@@ -138,12 +192,36 @@ function SpanRow({ span, traceStart, totalMs }: { span: TraceSpan; traceStart: n
       <div style={{ width: 52, textAlign: 'right', fontSize: 11, fontFamily: 'monospace', color: span.status === 'error' ? 'var(--bad)' : 'var(--tx-3)', flexShrink: 0 }}>
         {fmtLatency(span.latency_ms)}
       </div>
+
+      {/* Far right: token + cost (LLM only) */}
+      <div style={{ width: 120, textAlign: 'right', flexShrink: 0, paddingLeft: 8 }}>
+        {hasTokens && (
+          <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--tx-3)' }}>
+            ↑{(span.input_tokens ?? 0).toLocaleString()} ↓{(span.output_tokens ?? 0).toLocaleString()}
+          </span>
+        )}
+        {hasCost && (
+          <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--warn)', marginLeft: hasTokens ? 6 : 0 }}>
+            ¥{span.cost_cny!.toFixed(4)}
+          </span>
+        )}
+        {!hasTokens && !hasCost && span.type === 'span' && (
+          span.operation === 'asr'
+            ? <span style={{ fontSize: 9.5, padding: '1px 5px', borderRadius: 3, background: 'rgba(245,158,11,0.12)', color: 'var(--warn)', fontFamily: 'monospace', letterSpacing: '0.02em' }}>时长计费</span>
+            : <span style={{ fontSize: 10, color: 'var(--tx-4, var(--tx-3))', fontFamily: 'monospace' }}>—</span>
+        )}
+      </div>
     </div>
   );
 }
 
 function TraceRow({ trace }: { trace: Trace }) {
   const [open, setOpen] = useState(false);
+
+  const semanticLabel = traceSemanticLabel(trace.spans);
+  const totalTokens = traceTotalTokens(trace.spans);
+  const totalCost = traceTotalCost(trace.spans);
+  const shortId = trace.trace_id.slice(0, 10);
 
   return (
     <div style={{ borderBottom: '1px solid var(--hl-1)' }}>
@@ -160,10 +238,29 @@ function TraceRow({ trace }: { trace: Trace }) {
         {/* Chevron */}
         <span style={{ fontSize: 10, color: 'var(--tx-3)', transition: 'transform 0.2s', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
 
-        {/* trace_id */}
-        <span style={{ fontSize: 11.5, fontFamily: 'monospace', color: 'var(--tx-2)', flex: 1 }}>
-          {trace.trace_id}
-        </span>
+        {/* Semantic label + short id */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ fontSize: 12.5, color: 'var(--tx-1)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+            {semanticLabel}
+          </span>
+          <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--tx-4, var(--tx-3))', opacity: 0.6 }}>
+            #{shortId}
+          </span>
+        </div>
+
+        {/* Total tokens (if any LLM spans) */}
+        {totalTokens > 0 && (
+          <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: 'var(--tx-3)', whiteSpace: 'nowrap' }}>
+            {totalTokens.toLocaleString()} tok
+          </span>
+        )}
+
+        {/* Total cost */}
+        {totalCost != null && (
+          <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: 'var(--warn)', whiteSpace: 'nowrap' }}>
+            ¥{totalCost.toFixed(4)}
+          </span>
+        )}
 
         {/* span count */}
         <span style={{ fontSize: 11, color: 'var(--tx-3)' }}>{trace.spans.length} spans</span>
@@ -201,12 +298,13 @@ function TraceRow({ trace }: { trace: Trace }) {
             <div style={{ width: 200, fontSize: 10, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>操作</div>
             <div style={{ flex: 1, fontSize: 10, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>时间线</div>
             <div style={{ width: 52, fontSize: 10, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'right' }}>耗时</div>
+            <div style={{ width: 120, fontSize: 10, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'right', paddingLeft: 8 }}>用量 / 成本</div>
           </div>
           {trace.spans.map((span, i) => (
             <SpanRow key={i} span={span} traceStart={trace.start_ts} totalMs={trace.total_latency_ms} />
           ))}
           {/* Timeline scale */}
-          <div style={{ display: 'flex', marginLeft: 200, marginTop: 6, paddingTop: 4, borderTop: '1px solid var(--hl-1)' }}>
+          <div style={{ display: 'flex', marginLeft: 200, marginRight: 172, marginTop: 6, paddingTop: 4, borderTop: '1px solid var(--hl-1)' }}>
             {[0, 25, 50, 75, 100].map(pct => (
               <div key={pct} style={{ position: 'relative', left: `${pct === 100 ? 'auto' : pct + '%'}`, right: pct === 100 ? 0 : 'auto', marginRight: pct < 100 ? 'auto' : 0 }}>
                 <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'var(--tx-3)' }}>

@@ -69,13 +69,13 @@ export default function Sidebar({ collapsed, onToggleCollapse, onOpenCmdK, skill
 
       <div className="nav__group">
         <NavItem href="/" icon={<LayoutDashboard size={16} />} label="Dashboard" cn="仪表盘" active={isActive('/')} />
+        <NavItem href="/obs" icon={<Activity size={16} />} label="Obs" cn="可观测性" active={isActive('/obs')} />
         <NavItem href="/skills" icon={<Sparkles size={16} />} label="Skills" cn="技能" meta={skillCount} active={isActive('/skills')} />
         <NavItem href="/projects" icon={<Folder size={16} />} label="Projects" cn="项目" meta={projectCount} active={isActive('/projects')} />
         <NavItem href="/sync" icon={<RefreshCw size={16} />} label="Sync" cn="同步" badge={syncAlerts} active={isActive('/sync')} />
         <NavItem href="/graph" icon={<GitFork size={16} />} label="Graph" cn="关联图" active={isActive('/graph')} />
         <NavItem href="/pitfalls" icon={<AlertTriangle size={16} />} label="Lessons" cn="教训集" active={isActive('/pitfalls')} />
         <NavItem href="/reports" icon={<ClipboardList size={16} />} label="Reports" cn="报告历史" active={isActive('/reports')} />
-        <NavItem href="/obs" icon={<Activity size={16} />} label="Obs" cn="可观测性" active={isActive('/obs')} />
         <NavItem href="/settings" icon={<Settings size={16} />} label="Settings" cn="设置" active={isActive('/settings')} />
       </div>
 
