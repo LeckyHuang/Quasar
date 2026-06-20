@@ -235,6 +235,16 @@ function TraceRow({ trace }: { trace: Trace }) {
   const totalCost = traceTotalCost(trace.spans);
   const shortId = trace.trace_id.slice(0, 10);
 
+  // Compute effective display duration from (span_start_offset + span_latency).
+  // Avoids the waterfall collapsing when a span's end_ts is corrupted in the DB,
+  // which would inflate total_latency_ms to hours while actual spans take seconds.
+  const effectiveMs = trace.spans.reduce((max, s) => {
+    const spanEndMs = (s.start_ts - trace.start_ts) * 1000 + s.latency_ms
+    return Math.max(max, spanEndMs)
+  }, 0) || trace.total_latency_ms
+  const isInflated = trace.total_latency_ms > effectiveMs * 5 && effectiveMs > 500
+  const displayMs = isInflated ? effectiveMs : trace.total_latency_ms
+
   return (
     <div style={{ borderBottom: '1px solid var(--hl-1)' }}>
       {/* Header */}
@@ -278,13 +288,22 @@ function TraceRow({ trace }: { trace: Trace }) {
         <span style={{ fontSize: 11, color: 'var(--tx-3)' }}>{trace.spans.length} spans</span>
 
         {/* total latency */}
-        <span style={{
-          fontSize: 12, fontFamily: 'monospace', fontWeight: 600,
-          color: trace.total_latency_ms > 30000 ? 'var(--warn)' : 'var(--tx-1)',
-          minWidth: 48, textAlign: 'right',
-        }}>
+        <span
+          title={isInflated ? `实际有效耗时 ${fmtLatency(effectiveMs)}，原始记录 ${fmtLatency(trace.total_latency_ms)}（end_ts 异常）` : undefined}
+          style={{
+            fontSize: 12, fontFamily: 'monospace', fontWeight: 600,
+            color: isInflated ? 'var(--tx-3)' : displayMs > 30000 ? 'var(--warn)' : 'var(--tx-1)',
+            minWidth: 48, textAlign: 'right',
+            textDecoration: isInflated ? 'line-through' : 'none',
+          }}>
           {fmtLatency(trace.total_latency_ms)}
         </span>
+        {isInflated && (
+          <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 600, color: 'var(--warn)' }}
+            title={`end_ts 异常，已用各 span 实际耗时重算`}>
+            {fmtLatency(effectiveMs)} ⚠
+          </span>
+        )}
 
         {/* status badge */}
         <span style={{
@@ -313,14 +332,14 @@ function TraceRow({ trace }: { trace: Trace }) {
             <div style={{ width: 120, fontSize: 10, color: 'var(--tx-3)', textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: 'right', paddingLeft: 8 }}>用量 / 成本</div>
           </div>
           {trace.spans.map((span, i) => (
-            <SpanRow key={i} span={span} traceStart={trace.start_ts} totalMs={trace.total_latency_ms} />
+            <SpanRow key={i} span={span} traceStart={trace.start_ts} totalMs={displayMs} />
           ))}
           {/* Timeline scale */}
           <div style={{ display: 'flex', marginLeft: 200, marginRight: 172, marginTop: 6, paddingTop: 4, borderTop: '1px solid var(--hl-1)' }}>
             {[0, 25, 50, 75, 100].map(pct => (
               <div key={pct} style={{ position: 'relative', left: `${pct === 100 ? 'auto' : pct + '%'}`, right: pct === 100 ? 0 : 'auto', marginRight: pct < 100 ? 'auto' : 0 }}>
                 <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'var(--tx-3)' }}>
-                  {fmtLatency(trace.total_latency_ms * pct / 100)}
+                  {fmtLatency(displayMs * pct / 100)}
                 </span>
               </div>
             ))}
