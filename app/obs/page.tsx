@@ -93,54 +93,117 @@ function fmtOpName(op: string) { return OP_LABELS[op] ?? op.replace(/_/g, ' ') }
 /* ─── DayTrendChart ─── */
 function DayTrendChart({ byDay }: { byDay: DayRow[] }) {
   if (byDay.length < 2) return null
-  const W = 600, H = 72, PAD_L = 0, PAD_R = 0, PAD_T = 4, PAD_B = 18
-  const chartW = W - PAD_L - PAD_R
-  const chartH = H - PAD_T - PAD_B
-  const maxCalls = Math.max(...byDay.map(d => d.calls), 1)
-  const maxCost = Math.max(...byDay.map(d => d.cost_cny ?? 0), 0.0001)
-  const hasCost = byDay.some(d => d.cost_cny != null && d.cost_cny > 0)
   const n = byDay.length
-  const barW = Math.max(2, (chartW / n) * 0.55)
-  const step = chartW / n
+  const maxCalls = Math.max(...byDay.map(d => d.calls), 1)
+  const hasCost = byDay.some(d => d.cost_cny != null && d.cost_cny > 0)
 
+  // Layout constants (px, relative to viewBox 0 0 600 110)
+  const W = 600, H = 110
+  const PAD_L = 28, PAD_R = 8, PAD_T = 16, PAD_B = 28
+  const chartW = W - PAD_L - PAD_R
+  const chartH = H - PAD_T - PAD_B   // bar area height
+  const baseline = PAD_T + chartH     // y of x-axis
+
+  const step = chartW / n
+  const barW = Math.max(4, step * 0.5)
   const xOf = (i: number) => PAD_L + i * step + step * 0.5
 
+  // Subtle grid lines at 25% / 50% / 75% / 100%
+  const gridLines = [0.25, 0.5, 0.75, 1]
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 80, display: 'block' }}>
-      {/* Bars: calls */}
-      {byDay.map((d, i) => {
-        const bh = (d.calls / maxCalls) * chartH
-        const x = xOf(i) - barW / 2
-        const y = PAD_T + chartH - bh
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 120, display: 'block' }}>
+      {/* Grid lines + left-axis call count labels */}
+      {gridLines.map(pct => {
+        const y = baseline - pct * chartH
+        const label = Math.round(maxCalls * pct)
         return (
-          <g key={i}>
-            <rect x={x} y={y} width={barW} height={bh}
-              fill={d.errors > 0 ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.45)'} rx={1.5} />
+          <g key={pct}>
+            <line x1={PAD_L} y1={y} x2={W - PAD_R} y2={y}
+              stroke="rgba(128,128,128,0.12)" strokeWidth={1} />
+            <text x={PAD_L - 4} y={y + 3} textAnchor="end"
+              fontSize={8} fill="rgba(128,128,128,0.5)" fontFamily="monospace">
+              {label}
+            </text>
           </g>
         )
       })}
-      {/* Line: cost */}
-      {hasCost && (
-        <polyline
-          points={byDay.map((d, i) => {
-            const cy = PAD_T + chartH - ((d.cost_cny ?? 0) / maxCost) * chartH
-            return `${xOf(i)},${cy}`
-          }).join(' ')}
-          fill="none" stroke="rgba(245,158,11,0.8)" strokeWidth={1.5} strokeLinejoin="round"
-        />
-      )}
-      {/* X axis labels */}
+
+      {/* Baseline (x-axis) */}
+      <line x1={PAD_L} y1={baseline} x2={W - PAD_R} y2={baseline}
+        stroke="rgba(128,128,128,0.25)" strokeWidth={1} />
+
+      {/* Bars */}
       {byDay.map((d, i) => {
-        const show = n <= 10 || i % Math.ceil(n / 7) === 0 || i === n - 1
-        if (!show) return null
-        const label = d.day.slice(5)
+        const bh = Math.max((d.calls / maxCalls) * chartH, 2)
+        const x = xOf(i) - barW / 2
+        const y = baseline - bh
+        const hasErr = d.errors > 0
         return (
-          <text key={i} x={xOf(i)} y={H - 2} textAnchor="middle"
-            fontSize={8} fill="rgba(255,255,255,0.3)" fontFamily="monospace">
-            {label}
+          <g key={i}>
+            <rect x={x} y={y} width={barW} height={bh}
+              fill={hasErr ? 'rgba(239,68,68,0.55)' : 'rgba(59,130,246,0.5)'}
+              rx={2} />
+            {/* Call count above bar */}
+            <text x={xOf(i)} y={y - 3} textAnchor="middle"
+              fontSize={8.5} fontWeight="600" fill="rgba(180,180,180,0.85)" fontFamily="monospace">
+              {d.calls}
+            </text>
+          </g>
+        )
+      })}
+
+      {/* Cost dots + values (only when data exists) */}
+      {hasCost && (() => {
+        const maxCost = Math.max(...byDay.map(d => d.cost_cny ?? 0), 0.0001)
+        const points = byDay.map((d, i) => {
+          const cy = baseline - ((d.cost_cny ?? 0) / maxCost) * chartH
+          return { x: xOf(i), y: cy, cost: d.cost_cny }
+        })
+        return (
+          <g>
+            <polyline
+              points={points.map(p => `${p.x},${p.y}`).join(' ')}
+              fill="none" stroke="rgba(245,158,11,0.7)" strokeWidth={1.5}
+              strokeLinejoin="round" strokeDasharray="3 2"
+            />
+            {points.map((p, i) => p.cost != null && p.cost > 0 ? (
+              <g key={i}>
+                <circle cx={p.x} cy={p.y} r={2.5} fill="rgba(245,158,11,0.9)" />
+                <text x={p.x} y={p.y - 5} textAnchor="middle"
+                  fontSize={7.5} fill="rgba(245,158,11,0.8)" fontFamily="monospace">
+                  ¥{p.cost < 0.01 ? p.cost.toFixed(4) : p.cost.toFixed(3)}
+                </text>
+              </g>
+            ) : null)}
+          </g>
+        )
+      })()}
+
+      {/* X-axis date labels */}
+      {byDay.map((d, i) => {
+        const show = n <= 14 || i % Math.ceil(n / 10) === 0 || i === n - 1
+        if (!show) return null
+        return (
+          <text key={i} x={xOf(i)} y={H - 4} textAnchor="middle"
+            fontSize={8} fill="rgba(128,128,128,0.6)" fontFamily="monospace">
+            {d.day.slice(5)}
           </text>
         )
       })}
+
+      {/* Legend */}
+      <g transform={`translate(${W - PAD_R - 110}, 4)`}>
+        <rect x={0} y={0} width={8} height={8} fill="rgba(59,130,246,0.5)" rx={1} />
+        <text x={11} y={8} fontSize={8} fill="rgba(128,128,128,0.7)" fontFamily="monospace">调用次数</text>
+        {hasCost && (
+          <>
+            <line x1={60} y1={4} x2={72} y2={4} stroke="rgba(245,158,11,0.7)" strokeWidth={1.5} strokeDasharray="3 2" />
+            <circle cx={66} cy={4} r={2} fill="rgba(245,158,11,0.9)" />
+            <text x={75} y={8} fontSize={8} fill="rgba(128,128,128,0.7)" fontFamily="monospace">成本</text>
+          </>
+        )}
+      </g>
     </svg>
   )
 }
@@ -543,10 +606,12 @@ export default function ObsPage() {
                   </div>
                   {/* A3: 日趋势图 */}
                   {(data?.by_day ?? []).length >= 2 && (
-                    <div className="subcard" style={{ padding: '10px 14px 6px' }}>
-                      <div style={{ fontSize: 11, color: 'var(--tx-3)', marginBottom: 6, display: 'flex', gap: 16 }}>
-                        <span>调用趋势（蓝=调用量，橙=成本）</span>
-                        {(data?.by_day ?? []).some(d => d.errors > 0) && <span style={{ color: 'var(--bad)' }}>红=含错误</span>}
+                    <div className="subcard" style={{ padding: '10px 14px 4px' }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx-3)', marginBottom: 4 }}>
+                        调用趋势
+                        {(data?.by_day ?? []).some(d => d.errors > 0) && (
+                          <span style={{ color: 'var(--bad)', fontWeight: 400, marginLeft: 8 }}>· 红色柱=当日含错误</span>
+                        )}
                       </div>
                       <DayTrendChart byDay={data?.by_day ?? []} />
                     </div>
